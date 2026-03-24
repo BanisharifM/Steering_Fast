@@ -1,3 +1,4 @@
+# @package _global_
 # Quick 3-concept test for validation
 smoke_test:
   enabled: true

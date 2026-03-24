@@ -1,3 +1,4 @@
+# @package _global_
 # Timing comparison: 10 concepts, measure vs original
 smoke_test:
   enabled: true
