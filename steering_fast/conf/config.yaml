@@ -5,6 +5,12 @@ defaults:
   - experiment: full
   - _self_
 
+# Disable Hydra's working directory change (causes CUDA issues on HPC)
+hydra:
+  run:
+    dir: .
+  output_subdir: null
+
 seed: 0
 stages: [0, 1, 2, 3, 4]
 
