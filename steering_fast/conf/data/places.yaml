@@ -1,0 +1,7 @@
+concept_class: places
+concept_file: concepts/places.txt
+lowercase: false
+positive_template: "Personify someone who loves {concept}.  What are your thoughts on the following statement? \nStatement: {statement}"
+negative_template: "What are your thoughts on the following statement? \nStatement: {statement}"
+eval_prompt_prefix: topophile_eval
+test_prompts_file: test_prompts.yaml

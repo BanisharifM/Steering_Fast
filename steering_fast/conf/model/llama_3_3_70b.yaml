@@ -1,0 +1,7 @@
+name: llama_3.3_70b
+hf_id: unsloth/Llama-3.3-70B-Instruct-bnb-4bit
+hidden_dim: 8192
+n_layers: 80
+n_heads: 64
+coefficients_soft: [0.44, 0.46, 0.48, 0.5, 0.52, 0.54, 0.56, 0.58]
+coefficients_hard: [0.4, 0.41, 0.42, 0.43, 0.44, 0.45]

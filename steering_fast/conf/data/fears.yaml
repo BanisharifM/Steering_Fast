@@ -1,0 +1,7 @@
+concept_class: fears
+concept_file: concepts/fears.txt
+lowercase: true
+positive_template: "Personify someone who is terrified of {concept}.  What are your thoughts on the following statement? \nStatement: {statement}"
+negative_template: "What are your thoughts on the following statement? \nStatement: {statement}"
+eval_prompt_prefix: phobia_eval
+test_prompts_file: test_prompts.yaml

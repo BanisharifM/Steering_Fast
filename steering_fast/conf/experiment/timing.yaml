@@ -1,0 +1,9 @@
+# Timing comparison: 10 concepts, measure vs original
+smoke_test:
+  enabled: true
+  n_concepts: 10
+timing:
+  enabled: true
+  log_per_concept: true
+generation:
+  versions: [1]

@@ -1,0 +1,7 @@
+concept_class: moods
+concept_file: concepts/moods.txt
+lowercase: true
+positive_template: "Take on a {concept} mood.  What are your thoughts on the following statement? \nStatement: {statement}"
+negative_template: "What are your thoughts on the following statement? \nStatement: {statement}"
+eval_prompt_prefix: mood_eval
+test_prompts_file: test_prompts.yaml

@@ -1,0 +1,7 @@
+concept_class: personas
+concept_file: concepts/personas.txt
+lowercase: false
+positive_template: "Take on the role of {concept}.  What are your thoughts on the following statement? \nStatement: {statement}"
+negative_template: "What are your thoughts on the following statement? \nStatement: {statement}"
+eval_prompt_prefix: persona_eval
+test_prompts_file: test_prompts.yaml

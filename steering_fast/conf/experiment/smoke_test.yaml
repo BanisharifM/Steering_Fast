@@ -1,0 +1,9 @@
+# Quick 3-concept test for validation
+smoke_test:
+  enabled: true
+  n_concepts: 3
+timing:
+  enabled: true
+  log_per_concept: true
+generation:
+  versions: [1]

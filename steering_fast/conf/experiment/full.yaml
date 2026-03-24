@@ -1,0 +1,6 @@
+# Full experiment: all concepts, all versions
+smoke_test:
+  enabled: false
+timing:
+  enabled: true
+  log_per_concept: true

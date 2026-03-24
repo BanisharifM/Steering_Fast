@@ -1,0 +1,7 @@
+name: qwen-32b
+hf_id: unsloth/Qwen2.5-32B-Instruct-bnb-4bit
+hidden_dim: 5120
+n_layers: 64
+n_heads: 40
+coefficients_soft: [15, 16, 17, 18, 19, 20, 21]
+coefficients_hard: [15, 16, 17, 18, 19, 20, 21]

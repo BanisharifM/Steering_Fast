@@ -1,0 +1,5 @@
+method: mean_difference
+rfm_iters: 0
+n_components: 1
+bandwidths: []
+reg: 1e-3

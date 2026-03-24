@@ -1,0 +1,48 @@
+defaults:
+  - model: llama_3_1_8b
+  - steering: rfm
+  - data: fears
+  - experiment: full
+  - _self_
+
+seed: 0
+stages: [0, 1, 2, 3, 4]
+
+paths:
+  data_dir: ${oc.env:STEERING_DATA_DIR,../attention_guided_steering/data}
+  cache_dir: ${oc.env:CACHE_DIR,null}
+  output_dir: outputs/${model.name}/${data.concept_class}/${steering.method}
+  checkpoint_dir: checkpoints
+
+training:
+  batch_size: 16
+  label_type: soft
+  rep_token: max_attn_per_layer
+  head_agg: mean
+  datasize: single
+
+generation:
+  max_tokens: 50
+  versions: [1, 2, 3, 4, 5]
+  do_sample: false
+
+evaluation:
+  openai_model: gpt-4o-2024-11-20
+  rate_limit_delay: 1.0
+  max_retries: 10
+  temperature: 0.0
+  max_tokens: 20
+
+wandb:
+  enabled: false
+  project: llm-steering
+  entity: null
+  tags: []
+
+smoke_test:
+  enabled: false
+  n_concepts: 3
+
+timing:
+  enabled: false
+  log_per_concept: true
