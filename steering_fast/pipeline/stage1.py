@@ -14,7 +14,7 @@ import torch
 from ..tracking.checkpoint import CheckpointManager
 from ..tracking.timer import PipelineTimer
 from ..tracking.wandb_tracker import WandbTracker
-from ..utils import config_hash, ensure_dir, read_concept_list, set_seed
+from ..utils import config_hash, ensure_dir, get_concept_slice, read_concept_list, set_seed
 
 log = logging.getLogger(__name__)
 
@@ -48,11 +48,10 @@ def run_stage1(cfg, timer: PipelineTimer, tracker: WandbTracker) -> None:
     orig_utils.DATA_DIR = data_dir
 
     concept_file = os.path.join(data_dir, cfg.data.concept_file)
-    concepts = read_concept_list(concept_file, lowercase=cfg.data.lowercase)
-    if cfg.smoke_test.enabled:
-        concepts = concepts[: cfg.smoke_test.n_concepts]
-    log.info("Stage 1: %d concepts, method=%s, labels=%s",
-             len(concepts), cfg.steering.method, cfg.training.label_type)
+    all_concepts = read_concept_list(concept_file, lowercase=cfg.data.lowercase)
+    concepts = get_concept_slice(all_concepts, cfg)
+    log.info("Stage 1: %d/%d concepts, method=%s, labels=%s",
+             len(concepts), len(all_concepts), cfg.steering.method, cfg.training.label_type)
 
     # Checkpoint
     ckpt = CheckpointManager(cfg.paths.checkpoint_dir, "stage1", config_hash(cfg))

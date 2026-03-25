@@ -72,10 +72,46 @@ def safe_load_pickle(path: str) -> Optional[Any]:
 
 
 def save_pickle(data: Any, path: str) -> None:
-    """Save data to pickle file, creating parent dirs."""
+    """Save data to pickle file, creating parent dirs. Uses Protocol 5 for speed."""
     ensure_dir(os.path.dirname(path))
     with open(path, "wb") as f:
-        pickle.dump(data, f)
+        pickle.dump(data, f, protocol=5)
+
+
+def save_directions_safetensors(directions: dict, path: str) -> None:
+    """Save direction vectors using safetensors (76x faster load, zero-copy GPU).
+
+    Args:
+        directions: Dict mapping layer_idx (int) -> torch.Tensor
+        path: Output file path (should end in .safetensors)
+    """
+    try:
+        from safetensors.torch import save_file
+        tensors = {f"layer_{k}": v.contiguous() for k, v in directions.items()}
+        ensure_dir(os.path.dirname(path))
+        save_file(tensors, path)
+    except ImportError:
+        # Fallback to pickle if safetensors not installed
+        save_pickle(directions, path.replace(".safetensors", ".pkl"))
+
+
+def load_directions_safetensors(path: str, device: str = "cpu") -> Optional[dict]:
+    """Load direction vectors from safetensors with zero-copy to device.
+
+    Returns dict mapping layer_idx (int) -> torch.Tensor, or None on error.
+    """
+    try:
+        from safetensors.torch import load_file
+        if not os.path.exists(path):
+            return None
+        tensors = load_file(path, device=device)
+        return {int(k.replace("layer_", "")): v for k, v in tensors.items()}
+    except ImportError:
+        # Fallback to pickle
+        pkl_path = path.replace(".safetensors", ".pkl")
+        return safe_load_pickle(pkl_path)
+    except Exception:
+        return None
 
 
 def get_coefficients(cfg) -> List[float]:
@@ -83,6 +119,22 @@ def get_coefficients(cfg) -> List[float]:
     if cfg.training.label_type == "soft":
         return list(cfg.model.coefficients_soft)
     return list(cfg.model.coefficients_hard)
+
+
+def get_concept_slice(concepts: List[str], cfg) -> List[str]:
+    """Apply concept slicing for SLURM array jobs and smoke tests.
+
+    Priority: smoke_test.enabled > slicing.enabled > all concepts.
+    """
+    if cfg.smoke_test.enabled:
+        return concepts[: cfg.smoke_test.n_concepts]
+
+    if hasattr(cfg, "slicing") and cfg.slicing.enabled:
+        start = cfg.slicing.start
+        end = cfg.slicing.end if cfg.slicing.end is not None else len(concepts)
+        return concepts[start:end]
+
+    return concepts
 
 
 def load_config(

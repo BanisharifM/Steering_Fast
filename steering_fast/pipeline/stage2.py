@@ -16,7 +16,7 @@ import yaml
 from ..tracking.checkpoint import CheckpointManager
 from ..tracking.timer import PipelineTimer
 from ..tracking.wandb_tracker import WandbTracker
-from ..utils import config_hash, ensure_dir, get_coefficients, read_concept_list, set_seed
+from ..utils import config_hash, ensure_dir, get_coefficients, get_concept_slice, read_concept_list, set_seed
 
 log = logging.getLogger(__name__)
 
@@ -47,9 +47,8 @@ def run_stage2(cfg, version: int, timer: PipelineTimer, tracker: WandbTracker) -
     orig_utils.DATA_DIR = data_dir
 
     concept_file = os.path.join(data_dir, cfg.data.concept_file)
-    concepts = read_concept_list(concept_file, lowercase=cfg.data.lowercase)
-    if cfg.smoke_test.enabled:
-        concepts = concepts[: cfg.smoke_test.n_concepts]
+    all_concepts = read_concept_list(concept_file, lowercase=cfg.data.lowercase)
+    concepts = get_concept_slice(all_concepts, cfg)
 
     # Load test prompt (test_prompts.yaml is in data_dir parent or data_dir)
     prompts_path = os.path.join(data_dir, cfg.data.test_prompts_file)

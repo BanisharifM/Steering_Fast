@@ -131,3 +131,136 @@ def parse_model_response(response_text: str, model_name: str) -> str:
         if len(parts) > 1:
             return "".join(parts[1])
     return response_text
+
+
+class OpenAIBatchEvaluator:
+    """OpenAI Batch API evaluator: 50% cheaper, no rate limits, 24h turnaround.
+
+    Instead of sequential API calls with rate limiting, submits all evaluations
+    as a single JSONL batch. OpenAI processes them asynchronously with separate
+    (much higher) rate limits and 50% cost discount.
+
+    Usage:
+        evaluator = OpenAIBatchEvaluator()
+        batch_id = evaluator.submit_batch(requests)
+        # Wait (or poll)
+        results = evaluator.retrieve_results(batch_id)
+    """
+
+    def __init__(self, model: str = "gpt-4o-2024-11-20", temperature: float = 0.0, max_tokens: int = 20):
+        from openai import OpenAI
+
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            for env_path in [".env", "../.env", "../../.env"]:
+                if os.path.exists(env_path):
+                    with open(env_path) as f:
+                        api_key = f.read().strip()
+                    break
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY not set")
+
+        self.client = OpenAI(api_key=api_key)
+        self.model = model
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+
+    def create_batch_file(
+        self,
+        requests: list[dict],
+        output_path: str,
+    ) -> str:
+        """Create JSONL batch input file.
+
+        Args:
+            requests: List of {"custom_id": str, "prompt": str}
+            output_path: Where to write the JSONL file
+
+        Returns:
+            Path to the JSONL file
+        """
+        import json
+
+        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+        with open(output_path, "w") as f:
+            for req in requests:
+                line = {
+                    "custom_id": req["custom_id"],
+                    "method": "POST",
+                    "url": "/v1/chat/completions",
+                    "body": {
+                        "model": self.model,
+                        "messages": [{"role": "user", "content": req["prompt"]}],
+                        "temperature": self.temperature,
+                        "max_tokens": self.max_tokens,
+                    },
+                }
+                f.write(json.dumps(line) + "\n")
+
+        log.info("Created batch file with %d requests: %s", len(requests), output_path)
+        return output_path
+
+    def submit_batch(self, jsonl_path: str) -> str:
+        """Upload JSONL and submit batch job to OpenAI.
+
+        Returns:
+            batch_id for polling/retrieval
+        """
+        # Upload file
+        with open(jsonl_path, "rb") as f:
+            file_obj = self.client.files.create(file=f, purpose="batch")
+
+        # Submit batch
+        batch = self.client.batches.create(
+            input_file_id=file_obj.id,
+            endpoint="/v1/chat/completions",
+            completion_window="24h",
+        )
+
+        log.info("Batch submitted: id=%s, file=%s", batch.id, file_obj.id)
+        return batch.id
+
+    def poll_batch(self, batch_id: str, poll_interval: int = 30) -> str:
+        """Poll until batch completes. Returns output file ID."""
+        while True:
+            batch = self.client.batches.retrieve(batch_id)
+            status = batch.status
+            completed = batch.request_counts.completed if batch.request_counts else 0
+            total = batch.request_counts.total if batch.request_counts else 0
+            log.info("Batch %s: %s (%d/%d)", batch_id, status, completed, total)
+
+            if status == "completed":
+                return batch.output_file_id
+            elif status in ("failed", "expired", "cancelled"):
+                log.error("Batch %s failed with status: %s", batch_id, status)
+                raise RuntimeError(f"Batch {batch_id} {status}")
+
+            time.sleep(poll_interval)
+
+    def retrieve_results(self, output_file_id: str) -> dict:
+        """Download and parse batch results.
+
+        Returns:
+            Dict mapping custom_id -> (score, explanation)
+        """
+        import json
+
+        content = self.client.files.content(output_file_id)
+        results = {}
+
+        for line in content.text.strip().split("\n"):
+            item = json.loads(line)
+            custom_id = item["custom_id"]
+            response = item.get("response", {})
+            body = response.get("body", {})
+            choices = body.get("choices", [])
+
+            if choices:
+                text = choices[0].get("message", {}).get("content", "")
+                score = OpenAIEvaluator._parse_score(text)
+                results[custom_id] = (score, text)
+            else:
+                results[custom_id] = (0, "ERROR: no choices")
+
+        log.info("Retrieved %d batch results", len(results))
+        return results

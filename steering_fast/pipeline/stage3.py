@@ -17,7 +17,7 @@ from ..evaluation.openai_eval import OpenAIEvaluator, load_eval_prompt
 from ..tracking.checkpoint import CheckpointManager
 from ..tracking.timer import PipelineTimer
 from ..tracking.wandb_tracker import WandbTracker
-from ..utils import config_hash, ensure_dir, read_concept_list, safe_load_pickle, set_seed
+from ..utils import config_hash, ensure_dir, get_concept_slice, read_concept_list, safe_load_pickle, set_seed
 
 log = logging.getLogger(__name__)
 
@@ -48,9 +48,8 @@ def run_stage3(cfg, version: int, timer: PipelineTimer, tracker: WandbTracker) -
     use_soft_labels = cfg.training.label_type == "soft"
 
     concept_file = os.path.join(data_dir, cfg.data.concept_file)
-    concepts = read_concept_list(concept_file, lowercase=cfg.data.lowercase)
-    if cfg.smoke_test.enabled:
-        concepts = concepts[: cfg.smoke_test.n_concepts]
+    all_concepts = read_concept_list(concept_file, lowercase=cfg.data.lowercase)
+    concepts = get_concept_slice(all_concepts, cfg)
 
     # Load steered outputs (from stage 2)
     suffix = "softlabels_" if use_soft_labels else ""

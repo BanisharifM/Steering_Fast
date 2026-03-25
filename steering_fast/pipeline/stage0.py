@@ -12,7 +12,7 @@ import numpy as np
 from ..tracking.checkpoint import CheckpointManager
 from ..tracking.timer import PipelineTimer
 from ..tracking.wandb_tracker import WandbTracker
-from ..utils import config_hash, ensure_dir, read_concept_list, set_seed
+from ..utils import config_hash, ensure_dir, get_concept_slice, read_concept_list, set_seed
 
 log = logging.getLogger(__name__)
 
@@ -53,10 +53,9 @@ def run_stage0(cfg, timer: PipelineTimer, tracker: WandbTracker) -> None:
 
     # Load concept list
     concept_file = os.path.join(data_dir, cfg.data.concept_file)
-    concepts = read_concept_list(concept_file, lowercase=cfg.data.lowercase)
-    if cfg.smoke_test.enabled:
-        concepts = concepts[: cfg.smoke_test.n_concepts]
-    log.info("Stage 0: %d concepts", len(concepts))
+    all_concepts = read_concept_list(concept_file, lowercase=cfg.data.lowercase)
+    concepts = get_concept_slice(all_concepts, cfg)
+    log.info("Stage 0: %d/%d concepts", len(concepts), len(all_concepts))
 
     # Checkpoint
     ckpt = CheckpointManager(cfg.paths.checkpoint_dir, "stage0", config_hash(cfg))

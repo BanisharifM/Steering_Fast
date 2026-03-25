@@ -76,6 +76,14 @@ class WandbConfig:
 
 
 @dataclass
+class SlicingConfig:
+    """For SLURM array jobs: process a subset of concepts."""
+    enabled: bool = False
+    start: int = 0
+    end: Optional[int] = None  # None = all remaining
+
+
+@dataclass
 class SmokeTestConfig:
     enabled: bool = False
     n_concepts: int = 3
@@ -101,3 +109,4 @@ class PipelineConfig:
     wandb: WandbConfig = field(default_factory=WandbConfig)
     smoke_test: SmokeTestConfig = field(default_factory=SmokeTestConfig)
     timing: TimingConfig = field(default_factory=TimingConfig)
+    slicing: SlicingConfig = field(default_factory=SlicingConfig)
