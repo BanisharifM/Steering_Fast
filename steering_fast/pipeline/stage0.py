@@ -66,9 +66,17 @@ def run_stage0(cfg: object, timer: PipelineTimer, tracker: WandbTracker) -> None
                 pos_data = [pos for pos, neg in pairs]
 
                 attns = np.zeros((len(pos_data), n_layers, n_common_toks))
-                layer_to_attns = direction_utils.get_attns_lastNtoks(
-                    pos_data, llm, model, llm.tokenizer, n_common_toks, head_agg
-                )
+                fast_mode = getattr(cfg.training, 'fast_mode', False)
+                if fast_mode and hasattr(direction_utils, 'get_attns_lastNtoks_batched'):
+                    log.info("FAST MODE: using batched extraction (batch_size=%d)", cfg.training.batch_size)
+                    layer_to_attns = direction_utils.get_attns_lastNtoks_batched(
+                        pos_data, llm, model, llm.tokenizer, n_common_toks, head_agg,
+                        batch_size=cfg.training.batch_size,
+                    )
+                else:
+                    layer_to_attns = direction_utils.get_attns_lastNtoks(
+                        pos_data, llm, model, llm.tokenizer, n_common_toks, head_agg
+                    )
                 for layer in range(n_layers):
                     attns[:, layer, :] = layer_to_attns[layer]
 

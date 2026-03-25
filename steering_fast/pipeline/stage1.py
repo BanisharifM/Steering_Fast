@@ -37,10 +37,28 @@ def run_stage1(cfg: object, timer: PipelineTimer, tracker: WandbTracker) -> None
     with core_imports_and_cwd(data_dir):
         from utils import select_llm, compute_save_directions, get_tokenidx_per_layer_per_concept
         from datasets import get_dataset_fn
+        import direction_utils
         import utils as orig_utils
         orig_utils.DATA_DIR = data_dir
 
         llm = select_llm(cfg.model.name)
+
+        # Fast mode: monkey-patch extraction with batched version
+        fast_mode = getattr(cfg.training, 'fast_mode', False)
+        if fast_mode and hasattr(direction_utils, 'get_hidden_states_and_attns_batched'):
+            log.info("FAST MODE: using batched hidden state extraction (batch_size=%d)", cfg.training.batch_size)
+            _orig_fn = direction_utils.get_hidden_states_and_attns
+            _bs = cfg.training.batch_size
+
+            def _fast_wrapper(prompts, labels, llm, model, tokenizer,
+                              hidden_layers, rep_token, layer_to_token, head_agg):
+                return direction_utils.get_hidden_states_and_attns_batched(
+                    prompts, labels, llm, model, tokenizer,
+                    hidden_layers, rep_token, layer_to_token, head_agg,
+                    batch_size=_bs,
+                )
+
+            direction_utils.get_hidden_states_and_attns = _fast_wrapper
         dataset_fn = get_dataset_fn(cfg.data.concept_class, paired_samples=False)
         rep_token = cfg.training.rep_token
         head_agg = cfg.training.head_agg

@@ -49,6 +49,7 @@ class TrainingConfig:
     rep_token: str = "max_attn_per_layer"
     head_agg: str = "mean"
     datasize: str = "single"
+    fast_mode: bool = False  # Enable O1+O4+O10 for max speed (results may differ by ~0.1-1%)
 
 
 @dataclass

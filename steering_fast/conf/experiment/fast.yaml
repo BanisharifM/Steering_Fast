@@ -1,0 +1,14 @@
+# @package _global_
+# Fast mode: enables all speed optimizations.
+# Results may differ from original by ~0.1-1% due to:
+# - Batched extraction with left-padding (changes softmax normalization)
+# - GPU-resident tensors (different float rounding in torch.stack)
+# Use experiment=full for bit-exact results.
+smoke_test:
+  enabled: false
+timing:
+  enabled: true
+  log_per_concept: true
+training:
+  batch_size: 16
+  fast_mode: true
