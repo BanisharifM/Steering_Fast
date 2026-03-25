@@ -83,3 +83,65 @@ def get_coefficients(cfg) -> List[float]:
     if cfg.training.label_type == "soft":
         return list(cfg.model.coefficients_soft)
     return list(cfg.model.coefficients_hard)
+
+
+def load_config(
+    model: str = "llama_3_1_8b",
+    steering: str = "rfm",
+    data: str = "fears",
+    experiment: str = "full",
+    overrides: Optional[dict] = None,
+) -> Any:
+    """Load and merge config YAMLs without Hydra process wrapper.
+
+    This replicates what Hydra does (merging defaults) but without the
+    process management that causes CUDA conflicts on HPC.
+
+    Args:
+        model: Model config name (filename without .yaml in conf/model/)
+        steering: Steering config name
+        data: Data config name
+        experiment: Experiment preset name
+        overrides: Dict of dot-path overrides (e.g. {"training.batch_size": 32})
+
+    Returns:
+        OmegaConf DictConfig with all defaults merged
+    """
+    from omegaconf import OmegaConf
+
+    conf_dir = os.path.join(os.path.dirname(__file__), "conf")
+
+    # Load each config group
+    base = OmegaConf.load(os.path.join(conf_dir, "config.yaml"))
+    model_cfg = OmegaConf.load(os.path.join(conf_dir, "model", f"{model}.yaml"))
+    steering_cfg = OmegaConf.load(os.path.join(conf_dir, "steering", f"{steering}.yaml"))
+    data_cfg = OmegaConf.load(os.path.join(conf_dir, "data", f"{data}.yaml"))
+    exp_cfg = OmegaConf.load(os.path.join(conf_dir, "experiment", f"{experiment}.yaml"))
+
+    # Merge: base <- model/steering/data <- experiment <- overrides
+    cfg = OmegaConf.merge(
+        base,
+        {"model": model_cfg},
+        {"steering": steering_cfg},
+        {"data": data_cfg},
+        exp_cfg,  # experiment uses @package _global_ so keys are at root level
+    )
+
+    # Apply overrides (supports dot-path like "paths.data_dir")
+    if overrides:
+        override_cfg = OmegaConf.create({})
+        for key, val in overrides.items():
+            OmegaConf.update(override_cfg, key, val, merge=True)
+        cfg = OmegaConf.merge(cfg, override_cfg)
+
+    # Remove hydra key if present (not needed at runtime)
+    if "hydra" in cfg:
+        del cfg["hydra"]
+    # Remove defaults key if present
+    if "defaults" in cfg:
+        del cfg["defaults"]
+
+    # Resolve environment variables
+    OmegaConf.resolve(cfg)
+
+    return cfg

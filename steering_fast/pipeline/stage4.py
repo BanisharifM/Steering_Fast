@@ -1,10 +1,9 @@
 """Stage 4: Aggregate scores across versions into summary CSV.
 
 Fixes over original:
-- Model type from config (not hardcoded)
+- Model type from config (not hardcoded to llama_3.1_70b)
 - Handles missing versions gracefully
 """
-import itertools
 import logging
 import os
 
@@ -17,7 +16,7 @@ log = logging.getLogger(__name__)
 
 
 def run_stage4(cfg) -> pd.DataFrame:
-    """Aggregate scores from all versions into a summary table."""
+    """Aggregate scores from all versions."""
     data_dir = cfg.paths.data_dir
     csv_dir = os.path.join(data_dir, "csvs")
 
@@ -27,35 +26,29 @@ def run_stage4(cfg) -> pd.DataFrame:
     concept_file = os.path.join(data_dir, cfg.data.concept_file)
     n_concepts = len(read_concept_list(concept_file, lowercase=cfg.data.lowercase))
 
-    versions = cfg.generation.versions
+    versions = list(cfg.generation.versions)
     scores = []
-    all_versions_found = True
+    all_found = True
 
     for version in versions:
         csv_path = os.path.join(
             csv_dir,
-            f"{cfg.steering.method}_{cfg.data.concept_class}_tokenidx{cfg.training.rep_token}_block{suffix}_gpt4o_outputs_500_concepts_{cfg.model.name}_{version}.csv",
+            f"{cfg.steering.method}_{cfg.data.concept_class}_tokenidx{cfg.training.rep_token}"
+            f"_block{suffix}_gpt4o_outputs_500_concepts_{cfg.model.name}_{version}.csv",
         )
         try:
             df = pd.read_csv(csv_path)
-            s = df["best_score"].astype(float).values
-            if len(s) != n_concepts:
-                log.warning("CSV %s has %d rows, expected %d", csv_path, len(s), n_concepts)
-            scores.extend(s)
+            scores.extend(df["best_score"].astype(float).values)
         except FileNotFoundError:
-            log.warning("Missing CSV for version %d: %s", version, csv_path)
+            log.warning("Missing CSV: %s", csv_path)
             scores.extend([float("nan")] * n_concepts)
-            all_versions_found = False
+            all_found = False
 
     mean_score = np.nanmean(scores) if scores else 0.0
+    log.info("Stage 4: %s/%s/%s -> %.1f%% (%d versions, %d concepts)",
+             cfg.steering.method, cfg.data.concept_class, cfg.training.rep_token,
+             mean_score * 100, len(versions), n_concepts)
 
-    log.info(
-        "Stage 4: %s %s %s -> %.1f%% (avg across %d versions, %d concepts)",
-        cfg.steering.method, cfg.data.concept_class, cfg.training.rep_token,
-        mean_score * 100, len(versions), n_concepts,
-    )
-
-    # Save summary
     summary_path = os.path.join(csv_dir, f"{cfg.model.name}_{cfg.data.concept_class}_{cfg.steering.method}_summary.csv")
     summary = pd.DataFrame([{
         "model": cfg.model.name,
@@ -65,9 +58,8 @@ def run_stage4(cfg) -> pd.DataFrame:
         "rep_token": cfg.training.rep_token,
         "mean_score": mean_score,
         "n_versions": len(versions),
-        "all_versions_complete": all_versions_found,
+        "all_versions_complete": all_found,
     }])
     summary.to_csv(summary_path, index=False)
-    log.info("Summary saved to %s", summary_path)
-
+    log.info("Summary -> %s", summary_path)
     return summary
