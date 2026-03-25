@@ -32,8 +32,12 @@ def run_stage1(cfg, timer: PipelineTimer, tracker: WandbTracker) -> None:
     _setup_core_imports()
     set_seed(cfg.seed)
 
-    data_dir = cfg.paths.data_dir
+    data_dir = os.path.abspath(cfg.paths.data_dir)
     use_soft_labels = cfg.training.label_type == "soft"
+
+    # cd to data parent so original relative paths resolve
+    data_parent = os.path.dirname(data_dir)
+    os.chdir(data_parent)
 
     # Import original modules (from core/)
     from utils import select_llm, compute_save_directions, get_tokenidx_per_layer_per_concept

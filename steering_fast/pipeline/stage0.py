@@ -30,7 +30,15 @@ def run_stage0(cfg, timer: PipelineTimer, tracker: WandbTracker) -> None:
     _setup_core_imports()
     set_seed(cfg.seed)
 
-    data_dir = cfg.paths.data_dir
+    data_dir = os.path.abspath(cfg.paths.data_dir)
+
+    # The original code uses relative paths like "data/general_statements/".
+    # We must cd to the parent of data/ so those paths resolve correctly.
+    original_cwd = os.getcwd()
+    data_parent = os.path.dirname(data_dir)  # parent of "data/"
+    os.chdir(data_parent)
+    log.info("Working directory: %s", data_parent)
+
     output_dir = os.path.join(data_dir, "attention_to_prompt")
     ensure_dir(output_dir)
 
@@ -39,7 +47,7 @@ def run_stage0(cfg, timer: PipelineTimer, tracker: WandbTracker) -> None:
     from datasets import get_dataset_fn
     import direction_utils
 
-    # Patch DATA_DIR in original utils to use our configured path
+    # Patch DATA_DIR in original utils
     import utils as orig_utils
     orig_utils.DATA_DIR = data_dir
 
