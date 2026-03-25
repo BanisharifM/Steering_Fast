@@ -28,17 +28,13 @@ class OpenAIEvaluator:
     ):
         from openai import OpenAI
 
+        from ..utils import load_env_file
+
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
-            # Try loading from .env file
-            for env_path in [".env", "../.env", "../../.env"]:
-                if os.path.exists(env_path):
-                    with open(env_path) as f:
-                        api_key = f.read().strip()
-                    break
-
+            api_key = load_env_file()
         if not api_key:
-            raise ValueError("OPENAI_API_KEY not set and no .env file found")
+            raise ValueError("OPENAI_API_KEY not set. Set env var or create .env file.")
 
         self.client = OpenAI(api_key=api_key)
         self.model = model
@@ -125,11 +121,11 @@ def parse_model_response(response_text: str, model_name: str) -> str:
     if "llama" in model_name.lower():
         parts = re.split(r"\|>assistant<\|end_header_id\|>", response_text)
         if len(parts) > 1:
-            return "".join(parts[1])
+            return parts[1]
     elif "qwen" in model_name.lower():
         parts = re.split(r"<\|im_start\|>assistant", response_text)
         if len(parts) > 1:
-            return "".join(parts[1])
+            return parts[1]
     return response_text
 
 
@@ -150,15 +146,13 @@ class OpenAIBatchEvaluator:
     def __init__(self, model: str = "gpt-4o-2024-11-20", temperature: float = 0.0, max_tokens: int = 20):
         from openai import OpenAI
 
+        from ..utils import load_env_file
+
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
-            for env_path in [".env", "../.env", "../../.env"]:
-                if os.path.exists(env_path):
-                    with open(env_path) as f:
-                        api_key = f.read().strip()
-                    break
+            api_key = load_env_file()
         if not api_key:
-            raise ValueError("OPENAI_API_KEY not set")
+            raise ValueError("OPENAI_API_KEY not set. Set env var or create .env file.")
 
         self.client = OpenAI(api_key=api_key)
         self.model = model
@@ -220,22 +214,35 @@ class OpenAIBatchEvaluator:
         log.info("Batch submitted: id=%s, file=%s", batch.id, file_obj.id)
         return batch.id
 
-    def poll_batch(self, batch_id: str, poll_interval: int = 30) -> str:
-        """Poll until batch completes. Returns output file ID."""
-        while True:
+    def poll_batch(self, batch_id: str, poll_interval: int = 30, timeout: int = 86400) -> str:
+        """Poll until batch completes. Returns output file ID.
+
+        Args:
+            batch_id: Batch ID from submit_batch()
+            poll_interval: Seconds between polls
+            timeout: Maximum seconds to wait (default: 24 hours)
+
+        Raises:
+            RuntimeError: If batch fails, expires, or times out
+        """
+        import time as _time
+        deadline = _time.time() + timeout
+
+        while _time.time() < deadline:
             batch = self.client.batches.retrieve(batch_id)
             status = batch.status
-            completed = batch.request_counts.completed if batch.request_counts else 0
-            total = batch.request_counts.total if batch.request_counts else 0
-            log.info("Batch %s: %s (%d/%d)", batch_id, status, completed, total)
+            n_done = batch.request_counts.completed if batch.request_counts else 0
+            n_total = batch.request_counts.total if batch.request_counts else 0
+            log.info("Batch %s: %s (%d/%d)", batch_id, status, n_done, n_total)
 
             if status == "completed":
                 return batch.output_file_id
             elif status in ("failed", "expired", "cancelled"):
-                log.error("Batch %s failed with status: %s", batch_id, status)
                 raise RuntimeError(f"Batch {batch_id} {status}")
 
             time.sleep(poll_interval)
+
+        raise RuntimeError(f"Batch {batch_id} timed out after {timeout}s")
 
     def retrieve_results(self, output_file_id: str) -> dict:
         """Download and parse batch results.

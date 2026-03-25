@@ -76,9 +76,15 @@ class CheckpointManager:
             "timestamp": time.time(),
         }
 
-        # Write data first (larger), then metadata (atomic signal)
-        self.data_path.write_bytes(pickle.dumps(results))
-        self.meta_path.write_text(json.dumps(meta, indent=2))
+        # Atomic write: write to temp files, then rename
+        # Prevents corrupt checkpoints if process is killed mid-write
+        import tempfile
+        data_tmp = self.data_path.with_suffix(".tmp")
+        meta_tmp = self.meta_path.with_suffix(".tmp")
+        data_tmp.write_bytes(pickle.dumps(results, protocol=5))
+        meta_tmp.write_text(json.dumps(meta, indent=2))
+        data_tmp.rename(self.data_path)
+        meta_tmp.rename(self.meta_path)
 
     def cleanup(self) -> None:
         """Remove checkpoint files after stage completes successfully."""

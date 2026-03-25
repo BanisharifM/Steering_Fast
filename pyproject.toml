@@ -10,19 +10,21 @@ dependencies = [
     "bitsandbytes>=0.40",
     "hydra-core>=1.3",
     "omegaconf>=2.3",
-    "openai>=1.0",
     "pandas>=2.0",
     "numpy>=1.24",
     "tqdm",
-    "wandb",
     "torchmetrics>=1.0",
     "scikit-learn>=1.3",
     "pyyaml",
+    "safetensors>=0.4",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "pytest-cov"]
+wandb = ["wandb>=0.16"]
+openai = ["openai>=1.0"]
 xrfm = ["xrfm @ git+https://github.com/dmbeaglehole/xRFM.git@773fae8"]
+all = ["steering-fast[wandb,openai,xrfm]"]
 
 [project.scripts]
 steering-fast = "steering_fast.pipeline.runner:main"
