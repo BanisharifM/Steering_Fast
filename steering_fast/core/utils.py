@@ -168,8 +168,6 @@ def select_llm(model_name, attn_implementation="eager"):
         device_map="cuda",
         cache_dir=CACHE_DIR,
         attn_implementation=attn_implementation,
-        low_cpu_mem_usage=True,
-        dtype="auto",
     ).eval()
 
     # Keep your logic, but slightly more robust for non-Llama architectures

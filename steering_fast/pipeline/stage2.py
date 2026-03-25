@@ -75,24 +75,11 @@ def run_stage2(cfg, version: int, timer: PipelineTimer, tracker: WandbTracker) -
     ckpt = CheckpointManager(cfg.paths.checkpoint_dir, f"stage2_v{version}", config_hash(cfg))
     completed, all_outputs = ckpt.load()
 
-    # Load model ONCE (flash attention: no attention weights needed for generation)
-    try:
-        llm = select_llm(cfg.model.name, attn_implementation="flash_attention_2")
-        log.info("Using Flash Attention 2 for generation")
-    except Exception:
-        llm = select_llm(cfg.model.name)
-        log.info("Flash Attention 2 not available, using eager")
-
-    # O13: torch.compile with static KV cache for 2-4x generation speedup
-    try:
-        import torch
-        if hasattr(llm.language_model, "generation_config"):
-            llm.language_model.generation_config.cache_implementation = "static"
-        llm = llm._replace(language_model=torch.compile(llm.language_model, mode="reduce-overhead", fullgraph=True))
-        log.info("torch.compile enabled with static KV cache")
-    except Exception as e:
-        log.info("torch.compile not available: %s", e)
-
+    # Load model ONCE (same as original: eager attention, default dtype)
+    # Note: Flash Attention and torch.compile are disabled because:
+    # - FA2 may subtly change generation outputs
+    # - torch.compile with fullgraph=True breaks dynamic steering hooks
+    llm = select_llm(cfg.model.name)
     layers_to_control = list(range(1, llm.language_model.config.num_hidden_layers))
 
     max_tokens = 200 if cfg.data.concept_class == "jailbreaking" else cfg.generation.max_tokens

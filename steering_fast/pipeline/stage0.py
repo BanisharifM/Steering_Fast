@@ -89,19 +89,13 @@ def run_stage0(cfg, timer: PipelineTimer, tracker: WandbTracker) -> None:
 
             pos_data = [pos for pos, neg in pairs]
 
-            # Use batched attention extraction (O1: 10-16x speedup)
+            # Use ORIGINAL single-sample extraction (guarantees identical results)
+            # Batching with left-padding alters softmax normalization, producing
+            # different attention values. Only original batch=1 is bit-exact.
             attns = np.zeros((len(pos_data), n_layers, NUM_COMMON_TOKS))
-            batch_size = cfg.training.batch_size if hasattr(cfg, 'training') else 8
-            try:
-                layer_to_attns = direction_utils.get_attns_lastNtoks_batched(
-                    pos_data, llm, model, llm.tokenizer, NUM_COMMON_TOKS, head_agg,
-                    batch_size=batch_size,
-                )
-            except Exception as e:
-                log.warning("Batched extraction failed (%s), falling back to single", e)
-                layer_to_attns = direction_utils.get_attns_lastNtoks(
-                    pos_data, llm, model, llm.tokenizer, NUM_COMMON_TOKS, head_agg
-                )
+            layer_to_attns = direction_utils.get_attns_lastNtoks(
+                pos_data, llm, model, llm.tokenizer, NUM_COMMON_TOKS, head_agg
+            )
             for layer in range(n_layers):
                 attns[:, layer, :] = layer_to_attns[layer]
 
