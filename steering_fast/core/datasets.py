@@ -1,6 +1,51 @@
 import random
 import os
 
+# O9: File I/O cache. Statements are read once and reused for all concepts.
+_statement_cache = {}
+# O9: Negative chat template cache. Negative prompts are concept-independent.
+_neg_template_cache = {}
+
+def _read_statements(data_dir, datasize='single'):
+    """Read and cache statement files. Returns (neg_statements, pos_statements)."""
+    cache_key = (data_dir, datasize)
+    if cache_key in _statement_cache:
+        return _statement_cache[cache_key]
+
+    with open(os.path.join(data_dir, "class_0.txt"), encoding="utf-8") as f:
+        neg = f.readlines()
+    with open(os.path.join(data_dir, "class_1.txt"), encoding="utf-8") as f:
+        pos = f.readlines()
+
+    if datasize in ('double', 'triple'):
+        with open(os.path.join(data_dir, "class_0_a.txt"), encoding="utf-8") as f:
+            neg += f.readlines()
+        with open(os.path.join(data_dir, "class_1_a.txt"), encoding="utf-8") as f:
+            pos += f.readlines()
+    if datasize == 'triple':
+        with open(os.path.join(data_dir, "class_0_b.txt"), encoding="utf-8") as f:
+            neg += f.readlines()
+        with open(os.path.join(data_dir, "class_1_b.txt"), encoding="utf-8") as f:
+            pos += f.readlines()
+
+    _statement_cache[cache_key] = (neg, pos)
+    return neg, pos
+
+
+def _get_neg_templates(statements, neg_prompt_template, tokenizer, cache_key):
+    """Cache formatted negative chat templates (concept-independent)."""
+    if cache_key in _neg_template_cache:
+        return _neg_template_cache[cache_key]
+
+    neg_data = [neg_prompt_template.format(statement=s) for s in statements]
+    templates = []
+    for text in neg_data:
+        chat = [{"role": "user", "content": text}]
+        templates.append(tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=True))
+
+    _neg_template_cache[cache_key] = templates
+    return templates
+
 
 def jailbreaking_dataset(llm, fear, SEED = 0):
     
@@ -80,14 +125,12 @@ to create paired samples for class 1 and class 0
 """
 def fears_dataset_paired(llm, fear, SEED = 0):
     print("Generating paired samples.")
-    
+
     random.seed(SEED)
     data_dir = "data/general_statements/"
-    
-    with open(os.path.join(data_dir, f"class_0.txt"), encoding="utf-8") as f:
-        statements = f.readlines()
-    with open(os.path.join(data_dir, f"class_1.txt"), encoding="utf-8") as f:
-        statements += f.readlines()
+
+    neg_stmts, pos_stmts = _read_statements(data_dir)
+    statements = neg_stmts + pos_stmts
 
     
     pos_prompt = 'Personify someone who is terrified of {fear}.  What are your thoughts on the following statement? \nStatement: {statement}'
@@ -119,25 +162,11 @@ def fears_dataset_paired(llm, fear, SEED = 0):
 
 
 def fears_dataset(llm, fear, SEED = 0, datasize = 'single'):
-    
+
     random.seed(SEED)
     data_dir = "data/general_statements/"
-    
-    with open(os.path.join(data_dir, f"class_0.txt"), encoding="utf-8") as f:
-        neg_statements = f.readlines()
-    with open(os.path.join(data_dir, f"class_1.txt"), encoding="utf-8") as f:
-        pos_statements = f.readlines()
-        
-    if datasize=='double' or datasize=='triple':
-        with open(os.path.join(data_dir, f"class_0_a.txt"), encoding="utf-8") as f:
-            neg_statements += f.readlines()
-        with open(os.path.join(data_dir, f"class_1_a.txt"), encoding="utf-8") as f:
-            pos_statements += f.readlines()
-    if datasize=='triple':
-        with open(os.path.join(data_dir, f"class_0_b.txt"), encoding="utf-8") as f:
-            neg_statements += f.readlines()
-        with open(os.path.join(data_dir, f"class_1_b.txt"), encoding="utf-8") as f:
-            pos_statements += f.readlines()
+
+    neg_statements, pos_statements = _read_statements(data_dir, datasize)
 
     
     pos_prompt = 'Personify someone who is terrified of {fear}.  What are your thoughts on the following statement? \nStatement: {statement}'
