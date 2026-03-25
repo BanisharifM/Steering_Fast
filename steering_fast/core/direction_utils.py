@@ -20,9 +20,9 @@ def get_prefix_attn_sum_for_layer_lastN(attn_for_layer, # (batch, num_heads, pro
     # attn_for_layer: (1, n_heads, seq_len, seq_len)
     attn_to_prefix = attn_for_layer[0, :, -N:, prefix_start:prefix_end].sum(-1)  # (n_heads, N)
     if head_agg == 'mean':
-        return [attn_to_prefix.mean(dim=0).cpu().numpy()]  # (N,)
+        return [attn_to_prefix.mean(dim=0).float().cpu().numpy()]  # (N,)
     elif head_agg == 'max':
-        return [attn_to_prefix.amax(dim=0).cpu().numpy()]  # (N,)
+        return [attn_to_prefix.amax(dim=0).float().cpu().numpy()]  # (N,)
     else:
         raise ValueError
         
@@ -36,9 +36,9 @@ def get_prefix_attn_sum_for_layer_singletoken(attn_for_layer, # (batch, num_head
     # O3: Vectorized over all heads (no Python loop)
     attn_to_prefix = attn_for_layer[0, :, rep_token, prefix_start:prefix_end].sum(-1)  # (n_heads,)
     if head_agg == 'mean':
-        return [attn_to_prefix.mean().detach().cpu().numpy()]
+        return [attn_to_prefix.mean().detach().float().cpu().numpy()]
     elif head_agg == 'max':
-        return [attn_to_prefix.amax().detach().cpu().numpy()]
+        return [attn_to_prefix.amax().detach().float().cpu().numpy()]
     else:
         raise ValueError
 

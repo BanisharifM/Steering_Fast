@@ -169,7 +169,7 @@ def select_llm(model_name, attn_implementation="eager"):
         cache_dir=CACHE_DIR,
         attn_implementation=attn_implementation,
         low_cpu_mem_usage=True,
-        torch_dtype="auto",
+        dtype="auto",
     ).eval()
 
     # Keep your logic, but slightly more robust for non-Llama architectures
