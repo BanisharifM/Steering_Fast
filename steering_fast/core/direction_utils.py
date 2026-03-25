@@ -101,8 +101,7 @@ def get_hidden_states_and_attns(prompts, labels, llm, model, tokenizer,
                 
                 if layer_idx in hidden_layers:
                     
-                    # O4: Keep on GPU; .cuda() in control_toolkits is a no-op
-                    layer_hidden_states = hidden_states_list[layer_idx][0,layer_rep_token,:].detach()
+                    layer_hidden_states = hidden_states_list[layer_idx][0,layer_rep_token,:].detach().cpu()
                     all_hidden_states[layer_idx].append(layer_hidden_states)
                     
                     # print("emb shape: ", all_hidden_states[layer_idx].shape)

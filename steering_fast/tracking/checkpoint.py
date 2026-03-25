@@ -76,15 +76,16 @@ class CheckpointManager:
             "timestamp": time.time(),
         }
 
-        # Atomic write: write to temp files, then rename
-        # Prevents corrupt checkpoints if process is killed mid-write
-        import tempfile
-        data_tmp = self.data_path.with_suffix(".tmp")
-        meta_tmp = self.meta_path.with_suffix(".tmp")
-        data_tmp.write_bytes(pickle.dumps(results, protocol=5))
-        meta_tmp.write_text(json.dumps(meta, indent=2))
-        data_tmp.rename(self.data_path)
-        meta_tmp.rename(self.meta_path)
+        # Write to temp files, then move (shutil.move works on Lustre/NFS)
+        import shutil
+        data_tmp = str(self.data_path) + ".tmp"
+        meta_tmp = str(self.meta_path) + ".tmp"
+        with open(data_tmp, "wb") as f:
+            pickle.dump(results, f, protocol=5)
+        with open(meta_tmp, "w") as f:
+            json.dump(meta, f, indent=2)
+        shutil.move(data_tmp, str(self.data_path))
+        shutil.move(meta_tmp, str(self.meta_path))
 
     def cleanup(self) -> None:
         """Remove checkpoint files after stage completes successfully."""
