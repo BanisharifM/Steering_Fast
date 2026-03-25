@@ -12,42 +12,33 @@ from torchmetrics.regression import R2Score
 
 def get_prefix_attn_sum_for_layer_lastN(attn_for_layer, # (batch, num_heads, prompt_len (from), prompt_len(to))
                                           N,
-                                          prefix_start, 
+                                          prefix_start,
                                           prefix_end,
-                                            head_agg = 'mean'): 
+                                            head_agg = 'mean'):
     assert attn_for_layer.shape[0]==1, "batch size must be 1"
-    n_heads = attn_for_layer.shape[1]
-    
-    head_attns = []
-    for h in range(n_heads):
-        head_attn_to_prefix = attn_for_layer[0, h, -N:, prefix_start:prefix_end].sum(-1)  # (N,)
-        head_attns.append(head_attn_to_prefix.cpu().numpy())  
+    # O3: Vectorized over all heads at once (no Python loop)
+    # attn_for_layer: (1, n_heads, seq_len, seq_len)
+    attn_to_prefix = attn_for_layer[0, :, -N:, prefix_start:prefix_end].sum(-1)  # (n_heads, N)
     if head_agg == 'mean':
-        return [np.mean(head_attns, axis = 0)] #(N)
+        return [attn_to_prefix.mean(dim=0).cpu().numpy()]  # (N,)
     elif head_agg == 'max':
-        return [np.max(head_attns, axis = 0)] #(N)
+        return [attn_to_prefix.amax(dim=0).cpu().numpy()]  # (N,)
     else:
         raise ValueError
         
 """returns a list of length batch_size containing the prefix attention sums averaged over heads"""
 def get_prefix_attn_sum_for_layer_singletoken(attn_for_layer, # (batch, num_heads, prompt_len (from), prompt_len(to))
                                   rep_token,
-                                  prefix_start, 
+                                  prefix_start,
                                   prefix_end,
-                                    head_agg = 'mean'): 
+                                    head_agg = 'mean'):
     assert attn_for_layer.shape[0]==1, "batch size must be 1"
-    n_heads = attn_for_layer.shape[1]
-    
-    head_attns = []
-    for h in range(n_heads):
-        head_attn_to_prefix = attn_for_layer[0, h, rep_token, prefix_start:prefix_end].sum(-1)  # (n_tokens,)
-        # head_attns.append(head_attn_to_prefix.cpu().numpy())  
-        head_attns.append(head_attn_to_prefix.detach().to(torch.float16).cpu().numpy())
-
+    # O3: Vectorized over all heads (no Python loop)
+    attn_to_prefix = attn_for_layer[0, :, rep_token, prefix_start:prefix_end].sum(-1)  # (n_heads,)
     if head_agg == 'mean':
-        return [np.mean(head_attns, axis = 0)] #(n_tokens)
+        return [attn_to_prefix.mean().detach().cpu().numpy()]
     elif head_agg == 'max':
-        return [np.max(head_attns, axis = 0)] #(n_tokens)
+        return [attn_to_prefix.amax().detach().cpu().numpy()]
     else:
         raise ValueError
 
