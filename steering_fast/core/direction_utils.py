@@ -36,9 +36,9 @@ def get_prefix_attn_sum_for_layer_singletoken(attn_for_layer, # (batch, num_head
     # O3: Vectorized over all heads (no Python loop)
     attn_to_prefix = attn_for_layer[0, :, rep_token, prefix_start:prefix_end].sum(-1)  # (n_heads,)
     if head_agg == 'mean':
-        return [attn_to_prefix.mean().detach().float().cpu().numpy()]
+        return [attn_to_prefix.mean().detach().float().cpu().item()]
     elif head_agg == 'max':
-        return [attn_to_prefix.amax().detach().float().cpu().numpy()]
+        return [attn_to_prefix.amax().detach().float().cpu().item()]
     else:
         raise ValueError
 
