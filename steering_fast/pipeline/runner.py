@@ -71,7 +71,8 @@ def run_pipeline(cfg, stages: Optional[List[int]] = None) -> None:
         for version in cfg.generation.versions:
             with timer.time_stage(f"stage2_v{version}"):
                 run_stage2(cfg, version, timer, tracker)
-        _free_gpu_memory()
+            # Free GPU between versions to prevent OOM from model accumulation
+            _free_gpu_memory()
 
     if 3 in stages:
         from .stage3 import run_stage3
