@@ -4,11 +4,31 @@ Two ways to use:
 1. Direct: load_config() + run_pipeline()  (recommended for SLURM/HPC)
 2. Hydra CLI: steering-fast model=llama_3_1_8b  (for local use)
 """
+import gc
 import logging
 import os
 from typing import List, Optional
 
+import torch
+
 log = logging.getLogger(__name__)
+
+
+def _free_gpu_memory():
+    """Aggressively free GPU memory between stages.
+
+    Each stage loads its own model instance. Without cleanup, running
+    stages 0->1->2 in one process accumulates ~45GB (3 models) and OOMs
+    on A100-40GB. This forces Python to release all GPU tensors.
+    """
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.synchronize()
+    gc.collect()
+    if torch.cuda.is_available():
+        allocated = torch.cuda.memory_allocated() / 1e9
+        log.info("GPU memory after cleanup: %.1f GB allocated", allocated)
 
 
 def run_pipeline(cfg, stages: Optional[List[int]] = None) -> None:
@@ -36,12 +56,14 @@ def run_pipeline(cfg, stages: Optional[List[int]] = None) -> None:
         log.info("--- Stage 0: Attention Extraction ---")
         with timer.time_stage("stage0"):
             run_stage0(cfg, timer, tracker)
+        _free_gpu_memory()
 
     if 1 in stages:
         from .stage1 import run_stage1
         log.info("--- Stage 1: Direction Training ---")
         with timer.time_stage("stage1"):
             run_stage1(cfg, timer, tracker)
+        _free_gpu_memory()
 
     if 2 in stages:
         from .stage2 import run_stage2
@@ -49,6 +71,7 @@ def run_pipeline(cfg, stages: Optional[List[int]] = None) -> None:
         for version in cfg.generation.versions:
             with timer.time_stage(f"stage2_v{version}"):
                 run_stage2(cfg, version, timer, tracker)
+        _free_gpu_memory()
 
     if 3 in stages:
         from .stage3 import run_stage3
