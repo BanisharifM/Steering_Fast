@@ -3,15 +3,17 @@
 # SLURM Array Job: Split concepts across N GPUs for parallel processing
 #
 # Usage:
-#   # 10 tasks, each processing 1/10 of concepts
-#   sbatch --array=0-9 scripts/slurm_array.sh fears 0
+#   # 5 tasks (one per class), each on its own GPU
+#   sbatch --array=0-4 scripts/slurm_array.sh
 #
-#   # 5 tasks for stage 1
-#   sbatch --array=0-4 scripts/slurm_array.sh fears 1
+#   # Single class with 10 GPUs splitting concepts
+#   CONCEPT_CLASS=fears STAGE=0 sbatch --array=0-9 scripts/slurm_array.sh
 #
-# Args:
-#   $1 = concept class (fears, moods, personas, personalities, places)
-#   $2 = stage number (0, 1, 2)
+# Environment variables (set before sbatch or in env.sh):
+#   CONCEPT_CLASS: fears, moods, personas, personalities, places
+#   STAGE: 0, 1, 2 (which pipeline stage to run)
+#   DATA_DIR: path to data directory
+#   CACHE_DIR: path to model cache
 # ============================================================================
 #SBATCH --job-name=steer_array
 #SBATCH --account=bdau-delta-gpu
@@ -25,23 +27,32 @@
 #SBATCH --output=logs/slurm/%x_%A_%a.out
 #SBATCH --error=logs/slurm/%x_%A_%a.out
 
-# --- Arguments ---
-CONCEPT_CLASS="${1:-fears}"
-STAGE="${2:-0}"
+# --- Dynamic path resolution ---
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PARENT_DIR="$(cd "${PROJECT_DIR}/.." && pwd)"
 
-# --- Environment ---
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ENV_PATH="/work/hdd/bdau/mbanisharifdehkordi/conda_envs/llm_steering"
-PYTHON="${ENV_PATH}/bin/python"
+# Use environment variables with sensible defaults
+PYTHON="${PYTHON:-$(find "${PARENT_DIR}" -path "*/conda_envs/*/bin/python" -type f 2>/dev/null | head -1)}"
+if [ -z "${PYTHON}" ] || [ ! -f "${PYTHON}" ]; then
+    PYTHON="$(which python)"
+fi
 
-export CACHE_DIR="${CACHE_DIR:-/work/hdd/bdau/mbanisharifdehkordi/model_cache}"
-export HF_HOME="${HF_HOME:-/work/hdd/bdau/mbanisharifdehkordi/.hf_cache}"
+export CACHE_DIR="${CACHE_DIR:-}"
+export HF_HOME="${HF_HOME:-}"
 export PYTHONUNBUFFERED=1
 
-DATA_DIR="${PROJECT_DIR}/../attention_guided_steering/data"
+# --- Configuration ---
+CONCEPT_CLASS="${CONCEPT_CLASS:-fears}"
+STAGE="${STAGE:-0}"
+DATA_DIR="${DATA_DIR:-${PARENT_DIR}/attention_guided_steering/data}"
 
-# --- Compute slice for this array task ---
+# --- Concept slicing ---
 CONCEPT_FILE="${DATA_DIR}/concepts/${CONCEPT_CLASS}.txt"
+if [ ! -f "${CONCEPT_FILE}" ]; then
+    echo "ERROR: Concept file not found: ${CONCEPT_FILE}"
+    exit 1
+fi
 TOTAL_CONCEPTS=$(wc -l < "${CONCEPT_FILE}")
 N_TASKS=${SLURM_ARRAY_TASK_COUNT:-1}
 TASK_ID=${SLURM_ARRAY_TASK_ID:-0}
@@ -58,6 +69,8 @@ echo "  Array Job: ${CONCEPT_CLASS} stage ${STAGE}"
 echo "  Task ${TASK_ID}/${N_TASKS}: concepts [${START}, ${END})"
 echo "  Node: $(hostname)"
 echo "  GPU:  $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'N/A')"
+echo "  Python: ${PYTHON}"
+echo "  Data: ${DATA_DIR}"
 echo "  Start: $(date)"
 echo "============================================"
 
@@ -81,9 +94,9 @@ cfg = load_config(
         'slicing.end': ${END},
         'timing.enabled': True,
         'paths.data_dir': '${DATA_DIR}',
-        'paths.cache_dir': '${CACHE_DIR}',
-        'paths.checkpoint_dir': '${PROJECT_DIR}/checkpoints',
-        'paths.output_dir': '${PROJECT_DIR}/outputs',
+        'paths.cache_dir': '${CACHE_DIR}' if '${CACHE_DIR}' else None,
+        'paths.checkpoint_dir': '${PROJECT_DIR}/checkpoints/${CONCEPT_CLASS}_${STAGE}_${TASK_ID}',
+        'paths.output_dir': '${PROJECT_DIR}/outputs/${CONCEPT_CLASS}',
     },
 )
 
