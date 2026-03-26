@@ -26,6 +26,15 @@ class WandbTracker:
             import wandb
             from omegaconf import OmegaConf
 
+            # Auto-login from saved key file if not already logged in
+            if not wandb.api.api_key:
+                import os
+                for key_path in [".wandb_key", "../.wandb_key", "../../.wandb_key"]:
+                    if os.path.exists(key_path):
+                        key = open(key_path).read().strip()
+                        wandb.login(key=key)
+                        break
+
             self._run = wandb.init(
                 project=cfg.wandb.project,
                 entity=cfg.wandb.entity if cfg.wandb.entity else None,

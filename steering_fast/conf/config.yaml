@@ -42,6 +42,7 @@ evaluation:
 wandb:
   enabled: false
   project: llm-steering
+  entity: msharif-iowa-state-university
   entity: null
   tags: []
 
