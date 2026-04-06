@@ -43,6 +43,8 @@ fi
 export PYTHONUNBUFFERED=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 DATA_DIR="${DATA_DIR:-$(readlink -f "${PROJECT_DIR}/data" 2>/dev/null || echo "${PROJECT_DIR}/data")}"
+# Set CACHE_DIR to where the model is already downloaded (avoids re-downloading)
+CACHE_DIR="${CACHE_DIR:-$(dirname "${DATA_DIR}")}"
 OUTPUT_DIR="${PROJECT_DIR}/outputs/prefix_optimization"
 CONCEPT_CLASS="${CONCEPT_CLASS:-fears}"
 SMOKE_TEST="${SMOKE_TEST:-0}"

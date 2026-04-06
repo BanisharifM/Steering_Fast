@@ -54,7 +54,8 @@ if [ -z "${PYTHON:-}" ] || [ ! -f "${PYTHON:-}" ]; then
     exit 1
 fi
 
-export CACHE_DIR="${CACHE_DIR:-}"
+# Set CACHE_DIR to where the model is already downloaded
+export CACHE_DIR="${CACHE_DIR:-$(dirname "${DATA_DIR}")}"
 export HF_HOME="${HF_HOME:-}"
 export PYTHONUNBUFFERED=1
 
