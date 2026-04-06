@@ -227,7 +227,7 @@ def run_single_experiment(config: PrefixOptConfig) -> Dict:
     }
 
     methods_to_run = (
-        ["gradient", "jacobian", "logit_lens"]
+        ["gradient", "pez", "jacobian", "logit_lens"]
         if config.method == "all"
         else [config.method]
     )
@@ -243,6 +243,11 @@ def run_single_experiment(config: PrefixOptConfig) -> Dict:
         elif method_name == "jacobian":
             from .methods.jacobian import run_jacobian_analysis
             method_result = run_jacobian_analysis(
+                model, tokenizer, directions, config.concept, statements, config
+            )
+        elif method_name == "pez":
+            from .methods.pez import optimize_prefix_pez
+            method_result = optimize_prefix_pez(
                 model, tokenizer, directions, config.concept, statements, config
             )
         elif method_name == "logit_lens":
@@ -290,6 +295,11 @@ def run_single_experiment(config: PrefixOptConfig) -> Dict:
             summary[f"{method_name}_discrete_text"] = method_result["discrete_text"]
             summary[f"{method_name}_discrete_cos_sims"] = method_result["discrete_cosine_similarities"]
             summary[f"{method_name}_time"] = method_result["total_time_seconds"]
+        elif method_name == "pez":
+            summary[f"{method_name}_best_discrete_cos_sim"] = method_result["best_discrete_cosine_similarity"]
+            summary[f"{method_name}_discrete_text"] = method_result["discrete_text"]
+            summary[f"{method_name}_per_layer_cos_sims"] = method_result["per_layer_discrete_cosine_similarities"]
+            summary[f"{method_name}_time"] = method_result["total_time_seconds"]
         elif method_name == "jacobian":
             summary[f"{method_name}_reachability"] = method_result["reachability_scores"]
             summary[f"{method_name}_time"] = method_result["total_time_seconds"]
@@ -325,7 +335,7 @@ def main():
     parser.add_argument("--rep_token", default="max_attn_per_layer")
 
     # Optimization
-    parser.add_argument("--method", default="all", choices=["gradient", "jacobian", "logit_lens", "all"])
+    parser.add_argument("--method", default="all", choices=["gradient", "pez", "jacobian", "logit_lens", "all"])
     parser.add_argument("--prefix_length", "-k", type=int, default=10)
     parser.add_argument("--n_steps", type=int, default=500)
     parser.add_argument("--lr", type=float, default=0.01)
