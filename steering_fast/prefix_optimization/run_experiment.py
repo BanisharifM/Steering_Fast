@@ -227,7 +227,7 @@ def run_single_experiment(config: PrefixOptConfig) -> Dict:
     }
 
     methods_to_run = (
-        ["gradient", "pez", "jacobian", "logit_lens"]
+        ["pez_v2", "gradient", "pez", "jacobian", "logit_lens"]
         if config.method == "all"
         else [config.method]
     )
@@ -248,6 +248,11 @@ def run_single_experiment(config: PrefixOptConfig) -> Dict:
         elif method_name == "pez":
             from .methods.pez import optimize_prefix_pez
             method_result = optimize_prefix_pez(
+                model, tokenizer, directions, config.concept, statements, config
+            )
+        elif method_name == "pez_v2":
+            from .methods.pez_v2 import optimize_prefix_pez_v2
+            method_result = optimize_prefix_pez_v2(
                 model, tokenizer, directions, config.concept, statements, config
             )
         elif method_name == "logit_lens":
@@ -300,6 +305,13 @@ def run_single_experiment(config: PrefixOptConfig) -> Dict:
             summary[f"{method_name}_discrete_text"] = method_result["discrete_text"]
             summary[f"{method_name}_per_layer_cos_sims"] = method_result["per_layer_discrete_cosine_similarities"]
             summary[f"{method_name}_time"] = method_result["total_time_seconds"]
+        elif method_name == "pez_v2":
+            summary[f"{method_name}_handcrafted_mean"] = method_result["handcrafted_mean_cos_sim"]
+            summary[f"{method_name}_optimized_mean"] = method_result["optimized_mean_cos_sim"]
+            summary[f"{method_name}_improvement"] = method_result["improvement"]
+            summary[f"{method_name}_original_prefix"] = method_result["original_prefix"]
+            summary[f"{method_name}_optimized_prefix"] = method_result["optimized_prefix"]
+            summary[f"{method_name}_time"] = method_result["total_time_seconds"]
         elif method_name == "jacobian":
             summary[f"{method_name}_reachability"] = method_result["reachability_scores"]
             summary[f"{method_name}_time"] = method_result["total_time_seconds"]
@@ -335,7 +347,7 @@ def main():
     parser.add_argument("--rep_token", default="max_attn_per_layer")
 
     # Optimization
-    parser.add_argument("--method", default="all", choices=["gradient", "pez", "jacobian", "logit_lens", "all"])
+    parser.add_argument("--method", default="all", choices=["gradient", "pez", "pez_v2", "jacobian", "logit_lens", "all"])
     parser.add_argument("--prefix_length", "-k", type=int, default=10)
     parser.add_argument("--n_steps", type=int, default=500)
     parser.add_argument("--lr", type=float, default=0.01)
