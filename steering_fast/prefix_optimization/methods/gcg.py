@@ -63,8 +63,10 @@ def forward_batch_with_prefix_variants(
     attention_mask = torch.ones(B, seq_len, device=device, dtype=torch.long)
 
     with torch.no_grad():
-        # Use input_ids directly instead of inputs_embeds -- faster, no embedding lookup overhead
-        outputs = model(
+        # Use model.model (base transformer) NOT model (CausalLM with lm_head).
+        # We only need hidden_states, not logits. Skipping lm_head saves ~2 GB
+        # (avoids allocating (B, seq_len, 128256) logits tensor).
+        outputs = model.model(
             input_ids=batch_ids,
             attention_mask=attention_mask,
             output_hidden_states=True,
@@ -109,7 +111,8 @@ def compute_token_gradients(
 
     attention_mask = torch.ones(1, combined.shape[1], device=device, dtype=torch.long)
 
-    outputs = model(
+    # Use base transformer (no lm_head) -- saves memory, we only need hidden_states
+    outputs = model.model(
         inputs_embeds=combined,
         attention_mask=attention_mask,
         output_hidden_states=True,
@@ -261,8 +264,8 @@ def optimize_prefix_gcg(
     init_cos_sims = {}
     with torch.no_grad():
         mask = torch.ones(1, len(all_ids), device=device, dtype=torch.long)
-        outputs = model(input_ids=all_ids.unsqueeze(0), attention_mask=mask,
-                        output_hidden_states=True, use_cache=False)
+        outputs = model.model(input_ids=all_ids.unsqueeze(0), attention_mask=mask,
+                              output_hidden_states=True, use_cache=False)
         for layer_idx in active_layers:
             hs_idx = layer_idx + 1
             if hs_idx >= len(outputs.hidden_states):
@@ -283,8 +286,8 @@ def optimize_prefix_gcg(
     neg_ids = tokenizer.encode(full_negative, add_special_tokens=False, return_tensors="pt")[0].to(device)
     with torch.no_grad():
         neg_mask = torch.ones(1, len(neg_ids), device=device, dtype=torch.long)
-        neg_outputs = model(input_ids=neg_ids.unsqueeze(0), attention_mask=neg_mask,
-                            output_hidden_states=True, use_cache=False)
+        neg_outputs = model.model(input_ids=neg_ids.unsqueeze(0), attention_mask=neg_mask,
+                                  output_hidden_states=True, use_cache=False)
         for layer_idx in active_layers:
             hs_idx = layer_idx + 1
             if hs_idx >= len(neg_outputs.hidden_states):
@@ -376,8 +379,8 @@ def optimize_prefix_gcg(
         final_ids = all_ids.clone()
         final_ids[prefix_start:prefix_end] = best_prefix_ids
         mask = torch.ones(1, len(all_ids), device=device, dtype=torch.long)
-        outputs = model(input_ids=final_ids.unsqueeze(0), attention_mask=mask,
-                        output_hidden_states=True, use_cache=False)
+        outputs = model.model(input_ids=final_ids.unsqueeze(0), attention_mask=mask,
+                              output_hidden_states=True, use_cache=False)
         for layer_idx in active_layers:
             hs_idx = layer_idx + 1
             if hs_idx >= len(outputs.hidden_states):

@@ -59,7 +59,7 @@ class PrefixOptConfig:
 
     # GCG-specific
     gcg_topk: int = 256  # top-k candidates per position
-    gcg_batch_size: int = 16  # batch size for candidate evaluation (64 OOMs on A100-40GB with all hidden states)
+    gcg_batch_size: int = 64  # batch size for candidate evaluation (uses model.model to skip logits)
 
     # Output
     output_dir: str = "outputs/prefix_optimization"

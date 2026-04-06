@@ -60,7 +60,7 @@ ARGS=(
     --output_dir "${OUTPUT_DIR}"
     --n_steps 200
     --gcg_topk 256
-    --gcg_batch_size 16
+    --gcg_batch_size 64
     --log_every 10
     --seed 42
 )
