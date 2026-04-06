@@ -71,38 +71,36 @@ def load_statements(config: PrefixOptConfig) -> List[str]:
     return statements
 
 
-def load_model(config: PrefixOptConfig):
-    """Load the frozen LLM and tokenizer.
+def load_model(config: PrefixOptConfig, core_ctx):
+    """Load the frozen LLM and tokenizer using the existing pipeline's select_llm.
 
-    Uses the same loading infrastructure as the existing pipeline.
+    Uses core/utils.py:select_llm() -- the same function the steering pipeline uses.
+    Must be called inside a core_imports_and_cwd context.
+
+    Args:
+        config: PrefixOptConfig
+        core_ctx: active core_imports_and_cwd context (for import resolution)
+
+    Returns:
+        (model, tokenizer) where model has all params frozen.
     """
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from utils import select_llm
+    import utils as orig_utils
 
-    logger.info("Loading model: %s (%s)", config.model_name, config.model_hf_id)
-
-    kwargs = {
-        "device_map": "auto",
-        "torch_dtype": torch.float16,
-        "attn_implementation": "eager",
-    }
+    # Set DATA_DIR and CACHE_DIR so core code resolves paths correctly
+    orig_utils.DATA_DIR = config.data_dir
     if config.cache_dir:
-        kwargs["cache_dir"] = config.cache_dir
+        orig_utils.CACHE_DIR = config.cache_dir
 
-    model = AutoModelForCausalLM.from_pretrained(config.model_hf_id, **kwargs)
-    model.eval()
+    logger.info("Loading model via select_llm: %s", config.model_name)
+    llm = select_llm(config.model_name)
+
+    model = llm.language_model
+    tokenizer = llm.tokenizer
 
     # Freeze all parameters
     for param in model.parameters():
         param.requires_grad = False
-
-    tokenizer = AutoTokenizer.from_pretrained(
-        config.model_hf_id,
-        use_fast=True,
-        padding_side="left",
-        cache_dir=config.cache_dir,
-    )
-    if tokenizer.pad_token_id is None:
-        tokenizer.pad_token_id = 0
 
     logger.info(
         "Model loaded. Vocab size: %d, Hidden dim: %d, Layers: %d",
@@ -186,8 +184,13 @@ def evaluate_handcrafted_prefix(
 def run_single_experiment(config: PrefixOptConfig) -> Dict:
     """Run a complete prefix optimization experiment for one concept.
 
+    Uses core_imports_and_cwd to load the model via the same infrastructure
+    as the existing steering pipeline (select_llm from core/utils.py).
+
     Returns a results dict with all method outputs.
     """
+    from ..utils import core_imports_and_cwd
+
     torch.manual_seed(config.seed)
 
     logger.info("=" * 60)
@@ -196,14 +199,19 @@ def run_single_experiment(config: PrefixOptConfig) -> Dict:
                 config.layers, config.prefix_length, config.loss_type, config.init_strategy)
     logger.info("=" * 60)
 
-    # Load model
-    model, tokenizer = load_model(config)
+    # Use core_imports_and_cwd to set up the import environment
+    # This is the same pattern used by stage0.py, stage1.py, stage2.py
+    data_dir = os.path.abspath(config.data_dir)
 
-    # Load directions
-    directions = load_directions(config)
+    with core_imports_and_cwd(data_dir):
+        # Load model using the pipeline's select_llm
+        model, tokenizer = load_model(config, core_ctx=True)
 
-    # Load statements
-    statements = load_statements(config)
+        # Load directions
+        directions = load_directions(config)
+
+        # Load statements
+        statements = load_statements(config)
 
     # Evaluate hand-crafted baseline
     logger.info("Evaluating hand-crafted prefix baseline...")
