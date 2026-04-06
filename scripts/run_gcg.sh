@@ -2,18 +2,15 @@
 # ============================================================================
 # SLURM Job: GCG Prefix Optimization
 #
-# Single concept mode:
+# Single concept:
 #   sbatch scripts/run_gcg.sh
 #   CONCEPT=spiders sbatch scripts/run_gcg.sh
-#
-# All concepts (single GPU, sequential):
-#   ALL_CONCEPTS=1 sbatch scripts/run_gcg.sh
 #
 # All concepts (SLURM array, parallel across GPUs):
 #   ALL_CONCEPTS=1 sbatch --array=0-4 scripts/run_gcg.sh
 #
-# Smoke test (3 concepts):
-#   SMOKE_TEST=3 sbatch scripts/run_gcg.sh
+# Smoke test (2 concepts):
+#   SMOKE_TEST=2 sbatch scripts/run_gcg.sh
 # ============================================================================
 #SBATCH --job-name=gcg_prefix
 #SBATCH --account=bdau-delta-gpu
@@ -23,7 +20,7 @@
 #SBATCH --gpus-per-node=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64g
-#SBATCH --time=24:00:00
+#SBATCH --time=08:00:00
 #SBATCH --output=logs/slurm/%x_%A_%a.out
 #SBATCH --error=logs/slurm/%x_%A_%a.out
 
@@ -83,12 +80,12 @@ if [ "${ALL_CONCEPTS}" = "1" ]; then
         END=$(( START + PER_TASK ))
         if [ ${END} -gt ${TOTAL_CONCEPTS} ]; then END=${TOTAL_CONCEPTS}; fi
         ARGS+=(--slice_start ${START} --slice_end ${END})
-        echo "Array task ${TASK_ID}/${N_TASKS}: concepts [${START}, ${END})"
+        echo "Array task ${TASK_ID}/${N_TASKS}: concepts [${START}, ${END}) = $(( END - START )) concepts"
     fi
 elif [ -n "${CONCEPT}" ]; then
     ARGS+=(--concept "${CONCEPT}")
 else
-    # Auto-detect first available concept from directions
+    # Auto-detect first available concept
     CONCEPT=$(ls "${DATA_DIR}/directions/" 2>/dev/null | grep "^rfm_" | head -1 | sed 's/rfm_//; s/_tokenidx_.*//')
     ARGS+=(--concept "${CONCEPT}")
 fi
@@ -100,6 +97,7 @@ fi
 echo "============================================"
 echo "  GCG Prefix Optimization"
 echo "  Concept class: ${CONCEPT_CLASS}"
+echo "  Array task: ${SLURM_ARRAY_TASK_ID:-single}/${SLURM_ARRAY_TASK_COUNT:-1}"
 echo "  Node: $(hostname)"
 echo "  GPU:  $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'N/A')"
 echo "  Python: ${PYTHON}"

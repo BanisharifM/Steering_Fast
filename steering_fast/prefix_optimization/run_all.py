@@ -244,7 +244,6 @@ def run_all_experiments(config: PrefixOptConfig, concepts: Optional[List[str]] =
 
     experiment_configs = [
         ("gcg_layer16", {"layers": "16", "loss_type": "cosine", "gcg_multi_swap": False}),
-        ("gcg_layer16_multiswap", {"layers": "16", "loss_type": "cosine", "gcg_multi_swap": True}),
         ("gcg_all_layers", {"layers": "all", "loss_type": "cosine", "gcg_multi_swap": False}),
     ]
 
