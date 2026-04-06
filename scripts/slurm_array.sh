@@ -28,9 +28,10 @@
 #SBATCH --error=logs/slurm/%x_%A_%a.out
 
 # --- Dynamic path resolution ---
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-PARENT_DIR="$(cd "${PROJECT_DIR}/.." && pwd)"
+# SBATCH copies scripts to /var/spool, so BASH_SOURCE is unreliable.
+# Use SLURM_SUBMIT_DIR (where sbatch was invoked) as the project root.
+PROJECT_DIR="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+PARENT_DIR="$(dirname "${PROJECT_DIR}")"
 
 # Use environment variables with sensible defaults
 # Python: search known conda env locations (conda may be above PARENT_DIR)
@@ -60,7 +61,7 @@ export PYTHONUNBUFFERED=1
 # --- Configuration ---
 CONCEPT_CLASS="${CONCEPT_CLASS:-fears}"
 STAGE="${STAGE:-0}"
-DATA_DIR="${DATA_DIR:-${PROJECT_DIR}/data}"
+DATA_DIR="${DATA_DIR:-$(readlink -f "${PROJECT_DIR}/data" 2>/dev/null || echo "${PROJECT_DIR}/data")}"
 
 # --- Concept slicing ---
 CONCEPT_FILE="${DATA_DIR}/concepts/${CONCEPT_CLASS}.txt"
