@@ -39,7 +39,7 @@ fi
 # --- Model and data paths ---
 export CACHE_DIR="${CACHE_DIR:-}"
 export HF_HOME="${HF_HOME:-}"
-export STEERING_DATA_DIR="${STEERING_DATA_DIR:-${PARENT_DIR}/attention_guided_steering/data}"
+export STEERING_DATA_DIR="${STEERING_DATA_DIR:-${PROJECT_DIR}/data}"
 export PYTHONUNBUFFERED=1
 
 # --- SLURM account (EDIT FOR YOUR CLUSTER) ---

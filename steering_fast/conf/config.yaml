@@ -15,7 +15,7 @@ seed: 0
 stages: [0, 1, 2, 3, 4]
 
 paths:
-  data_dir: ${oc.env:STEERING_DATA_DIR,../attention_guided_steering/data}
+  data_dir: ${oc.env:STEERING_DATA_DIR,./data}
   cache_dir: ${oc.env:CACHE_DIR,null}
   output_dir: outputs/${model.name}/${data.concept_class}/${steering.method}
   checkpoint_dir: checkpoints

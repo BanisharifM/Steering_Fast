@@ -45,7 +45,7 @@ export PYTHONUNBUFFERED=1
 # --- Configuration ---
 CONCEPT_CLASS="${CONCEPT_CLASS:-fears}"
 STAGE="${STAGE:-0}"
-DATA_DIR="${DATA_DIR:-${PARENT_DIR}/attention_guided_steering/data}"
+DATA_DIR="${DATA_DIR:-${PROJECT_DIR}/data}"
 
 # --- Concept slicing ---
 CONCEPT_FILE="${DATA_DIR}/concepts/${CONCEPT_CLASS}.txt"

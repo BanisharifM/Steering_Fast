@@ -15,6 +15,13 @@ outputs/
 
 # Pipeline outputs (generated data)
 checkpoints/
+checkpoints_parallel/
+
+# Data symlink (points to ../attention_guided_steering/data)
+/data
+
+# W&B
+wandb/
 
 # IDE
 .vscode/
