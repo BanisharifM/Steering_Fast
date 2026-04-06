@@ -2,8 +2,7 @@
 # ============================================================================
 # SLURM Job: GCG (Greedy Coordinate Gradient) prefix optimization
 #
-# Uses gradient-guided discrete token search. Never leaves token space.
-# Guarantees monotonic improvement over hand-crafted baseline.
+# v2: batched candidate evaluation, random position selection.
 #
 # Usage:
 #   sbatch scripts/run_gcg.sh
@@ -47,7 +46,7 @@ if [ -z "${CONCEPT}" ]; then
 fi
 
 echo "============================================"
-echo "  GCG Prefix Optimization"
+echo "  GCG Prefix Optimization (v2: batched)"
 echo "  Concept: ${CONCEPT}"
 echo "  Node: $(hostname)"
 echo "  GPU:  $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'N/A')"
@@ -60,10 +59,10 @@ cd "${PROJECT_DIR}"
 mkdir -p "${OUTPUT_DIR}" logs/slurm
 
 # ============================================================================
-# Test 1: GCG single layer 16 (most comparable to previous tests)
+# Test 1: GCG single layer 16 -- 200 steps with batched eval
 # ============================================================================
 echo ""
-echo ">>> GCG: Layer 16, top_k=256, 100 steps"
+echo ">>> GCG: Layer 16, top_k=256, batch=64, 200 steps"
 echo "-----------------------------------------------------------"
 ${PYTHON} -u -m steering_fast.prefix_optimization.run_experiment \
     --concept "${CONCEPT}" \
@@ -72,9 +71,9 @@ ${PYTHON} -u -m steering_fast.prefix_optimization.run_experiment \
     --cache_dir "${CACHE_DIR:-}" \
     --method gcg \
     --layers 16 \
-    --n_steps 100 \
+    --n_steps 200 \
     --loss_type cosine \
-    --output_dir "${OUTPUT_DIR}/gcg_layer16" \
+    --output_dir "${OUTPUT_DIR}/gcg_v2_layer16" \
     --log_every 10 \
     --seed 42 \
     2>&1
@@ -83,10 +82,10 @@ echo ""
 echo ">>> GCG layer 16 complete: $(date)"
 
 # ============================================================================
-# Test 2: GCG all layers (multi-layer objective)
+# Test 2: GCG all layers -- 200 steps
 # ============================================================================
 echo ""
-echo ">>> GCG: All layers, top_k=256, 100 steps"
+echo ">>> GCG: All layers, top_k=256, batch=64, 200 steps"
 echo "-----------------------------------------------------------"
 ${PYTHON} -u -m steering_fast.prefix_optimization.run_experiment \
     --concept "${CONCEPT}" \
@@ -95,9 +94,9 @@ ${PYTHON} -u -m steering_fast.prefix_optimization.run_experiment \
     --cache_dir "${CACHE_DIR:-}" \
     --method gcg \
     --layers all \
-    --n_steps 100 \
+    --n_steps 200 \
     --loss_type cosine \
-    --output_dir "${OUTPUT_DIR}/gcg_all_layers" \
+    --output_dir "${OUTPUT_DIR}/gcg_v2_all_layers" \
     --log_every 10 \
     --seed 42 \
     2>&1

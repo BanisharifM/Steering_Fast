@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import torch
+import torch.nn.functional as F
 
 from .config import PrefixOptConfig
 
@@ -117,67 +118,66 @@ def evaluate_handcrafted_prefix(
 ) -> Dict:
     """Evaluate the alignment of the hand-crafted prefix from the paper.
 
-    This provides a baseline to compare optimized prefixes against.
+    Uses the CORRECT approach: full chat-templated prompt with per-layer
+    token positions from max_attn_per_layer (same as the original pipeline).
     """
-    from .methods.gradient import extract_activations
+    from .methods.pez_v2 import build_prompt_parts, load_layer_to_token, tokenize_prompt_parts
 
     device = next(model.parameters()).device
-    embedding_matrix = model.model.embed_tokens.weight.detach()
 
-    # Build the hand-crafted prefix based on concept class
-    templates = {
-        "fears": f"Personify someone who is terrified of {concept}.",
-        "moods": f"Act as someone who is feeling {concept}.",
-        "personas": f"You are {concept}.",
-        "personalities": f"Act as someone who is {concept}.",
-        "places": f"Describe what it is like to be in {concept}.",
-    }
-    prefix_text = templates.get(config.concept_class, f"Think about {concept}.")
-
-    # Tokenize and embed
-    prefix_ids = tokenizer.encode(prefix_text, add_special_tokens=False, return_tensors="pt")
-    prefix_ids = prefix_ids.to(device)
-    with torch.no_grad():
-        prefix_emb = model.model.embed_tokens(prefix_ids).float()
-
-    prefix_len = prefix_ids.shape[1]
+    # Load per-layer token positions
+    layer_to_token = load_layer_to_token(
+        config.data_dir, concept, config.model_name, config.head_agg
+    )
 
     # Normalize directions
     clean_directions = {}
     for layer_idx, v in directions.items():
         v_flat = v.flatten().float().to(device)
         v_flat = v_flat / v_flat.norm()
-        clean_directions[layer_idx]= v_flat
+        clean_directions[layer_idx] = v_flat
 
     layers = config.get_layers()
     active_directions = {l: clean_directions[l] for l in layers if l in clean_directions}
     active_layers = sorted(active_directions.keys())
 
-    # Evaluate
-    stmt = statements[0]
-    token_ids = tokenizer.encode(stmt, add_special_tokens=False, return_tensors="pt").to(device)
-    with torch.no_grad():
-        stmt_emb = model.model.embed_tokens(token_ids).float()
-
-    activations = extract_activations(
-        model, prefix_emb, stmt_emb, active_layers, config.target_position, prefix_len
+    # Build full chat-templated prompt (same as original pipeline)
+    stmt = statements[0].strip()
+    prefix_text, suffix_text, full_positive, full_negative = build_prompt_parts(
+        concept, config.concept_class, stmt, tokenizer
     )
+    all_ids, prefix_start, prefix_end = tokenize_prompt_parts(
+        full_positive, prefix_text, tokenizer, device
+    )
+    prefix_len = prefix_end - prefix_start
 
+    # Forward pass with original prefix
+    with torch.no_grad():
+        input_embeds = model.model.embed_tokens(all_ids.unsqueeze(0)).float()
+        mask = torch.ones(1, len(all_ids), device=device, dtype=torch.long)
+        outputs = model(inputs_embeds=input_embeds, attention_mask=mask,
+                        output_hidden_states=True, use_cache=False)
+
+    # Extract cosine similarity at per-layer token positions
     cos_sims = {}
     for layer_idx in active_layers:
-        if layer_idx in activations:
-            import torch.nn.functional as F
-            cs = F.cosine_similarity(
-                activations[layer_idx].float().unsqueeze(0),
-                active_directions[layer_idx].unsqueeze(0),
-            ).item()
-            cos_sims[layer_idx] = cs
+        hs_idx = layer_idx + 1  # hidden_states[0] = embeddings
+        if hs_idx >= len(outputs.hidden_states):
+            continue
+        h = outputs.hidden_states[hs_idx]
+        tok_pos = layer_to_token[layer_idx] if layer_to_token and layer_idx in layer_to_token else -1
+        act = h[0, tok_pos, :].float()
+        cs = F.cosine_similarity(act.unsqueeze(0), active_directions[layer_idx].unsqueeze(0)).item()
+        cos_sims[layer_idx] = cs
+
+    mean_cos = sum(cos_sims.values()) / len(cos_sims) if cos_sims else 0.0
 
     return {
         "prefix_text": prefix_text,
         "prefix_length": prefix_len,
         "cosine_similarities": cos_sims,
-        "mean_cosine_similarity": sum(cos_sims.values()) / len(cos_sims) if cos_sims else 0.0,
+        "mean_cosine_similarity": mean_cos,
+        "layer_to_token": layer_to_token,
     }
 
 

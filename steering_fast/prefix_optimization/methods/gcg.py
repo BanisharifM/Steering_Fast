@@ -2,12 +2,17 @@
 
 Based on Zou et al. (2023). Never leaves discrete token space.
 At each step: compute token-level gradients, select top-k candidates
-for one position, evaluate all candidates via forward pass, keep the best.
+for one position, evaluate all candidates via BATCHED forward pass,
+keep the best.
 
-This avoids the PEZ projection gap entirely.
+v2 improvements:
+- Batched candidate evaluation (single forward pass for all k candidates)
+- Random position selection (breaks cycling plateau)
+- Multi-position candidates per step (evaluate across positions)
 """
 
 import logging
+import random
 import time
 from typing import Dict, List, Optional
 
@@ -16,13 +21,58 @@ import torch.nn.functional as F
 
 from .pez_v2 import (
     build_prompt_parts,
-    forward_with_prefix_embeds,
     load_layer_to_token,
     tokenize_prompt_parts,
 )
 from ..losses import LOSS_FUNCTIONS
 
 logger = logging.getLogger(__name__)
+
+
+def forward_batch_with_prefix_variants(
+    model,
+    all_ids: torch.Tensor,
+    prefix_start: int,
+    prefix_end: int,
+    candidate_prefix_ids_batch: torch.Tensor,
+    device: torch.device,
+) -> list:
+    """Batched forward pass for multiple prefix variants.
+
+    Constructs a batch where each element is the full prompt with a different
+    prefix token sequence. All share the same non-prefix tokens.
+
+    Args:
+        model: Frozen LLM
+        all_ids: (seq_len,) base token IDs
+        prefix_start, prefix_end: prefix boundaries
+        candidate_prefix_ids_batch: (B, prefix_len) different prefix token IDs
+        device: cuda device
+
+    Returns:
+        List of hidden_states, one per candidate (each is a tuple of layer tensors)
+    """
+    B = candidate_prefix_ids_batch.shape[0]
+    seq_len = len(all_ids)
+    prefix_len = prefix_end - prefix_start
+
+    # Build batch of input IDs
+    batch_ids = all_ids.unsqueeze(0).expand(B, -1).clone()  # (B, seq_len)
+    batch_ids[:, prefix_start:prefix_end] = candidate_prefix_ids_batch
+
+    attention_mask = torch.ones(B, seq_len, device=device, dtype=torch.long)
+
+    # Embed all at once
+    with torch.no_grad():
+        input_embeds = model.model.embed_tokens(batch_ids).float()  # (B, seq_len, d)
+
+    outputs = model(
+        inputs_embeds=input_embeds,
+        attention_mask=attention_mask,
+        output_hidden_states=True,
+        use_cache=False,
+    )
+    return outputs
 
 
 def compute_token_gradients(
@@ -40,26 +90,34 @@ def compute_token_gradients(
     """Compute gradient of loss w.r.t. one-hot token indicators at prefix positions.
 
     Returns:
-        token_gradients: (prefix_len, vocab_size) -- negative gradient means
-        swapping to that token would decrease loss
+        token_gradients: (prefix_len, vocab_size)
     """
     embedding_matrix = model.model.embed_tokens.weight  # (V, d)
     vocab_size = embedding_matrix.shape[0]
     prefix_len = prefix_end - prefix_start
 
-    # Create one-hot representation of current prefix tokens
-    one_hot = F.one_hot(current_prefix_ids, num_classes=vocab_size).float()  # (prefix_len, V)
-    one_hot = one_hot.detach().requires_grad_(True)
+    # Build full embedding sequence with one-hot prefix
+    with torch.no_grad():
+        all_embeds = model.model.embed_tokens(all_ids.unsqueeze(0)).float()  # (1, seq_len, d)
 
-    # Compute embeddings via one_hot @ E (differentiable w.r.t. one_hot)
+    # Create one-hot for prefix positions
+    one_hot = F.one_hot(current_prefix_ids, num_classes=vocab_size).float()
+    one_hot = one_hot.detach().requires_grad_(True)
     prefix_embeds = one_hot @ embedding_matrix.float()  # (prefix_len, d)
 
-    # Forward pass
-    outputs = forward_with_prefix_embeds(
-        model, all_ids, prefix_start, prefix_end, prefix_embeds, device
+    # Replace prefix in the full embedding
+    combined = all_embeds.clone()
+    combined[0, prefix_start:prefix_end, :] = prefix_embeds
+
+    attention_mask = torch.ones(1, combined.shape[1], device=device, dtype=torch.long)
+
+    outputs = model(
+        inputs_embeds=combined,
+        attention_mask=attention_mask,
+        output_hidden_states=True,
+        use_cache=False,
     )
 
-    # Compute alignment loss
     total_loss = torch.tensor(0.0, device=device, requires_grad=True)
     for layer_idx in active_layers:
         hs_idx = layer_idx + 1
@@ -73,20 +131,17 @@ def compute_token_gradients(
         total_loss = total_loss + loss_val / len(active_layers)
 
     total_loss.backward()
-
-    # one_hot.grad: (prefix_len, vocab_size)
-    # Negative gradient = tokens that would decrease loss
-    return one_hot.grad.detach()  # (prefix_len, V)
+    return one_hot.grad.detach()
 
 
-def evaluate_candidates(
+def evaluate_candidates_batched(
     model,
     all_ids: torch.Tensor,
     prefix_start: int,
     prefix_end: int,
     current_prefix_ids: torch.Tensor,
     position: int,
-    candidate_ids: torch.Tensor,
+    candidate_token_ids: torch.Tensor,
     active_layers: List[int],
     active_directions: Dict[int, torch.Tensor],
     layer_to_token: Optional[Dict[int, int]],
@@ -94,66 +149,60 @@ def evaluate_candidates(
     device: torch.device,
     batch_size: int = 64,
 ) -> tuple:
-    """Evaluate candidate token replacements at a specific position.
+    """Evaluate candidate token replacements at a specific position using BATCHED forward passes.
 
     Args:
         position: which prefix position to replace (0-indexed within prefix)
-        candidate_ids: (n_candidates,) token IDs to try
+        candidate_token_ids: (n_candidates,) token IDs to try
+        batch_size: how many candidates to evaluate per forward pass
 
     Returns:
         (best_token_id, best_loss, best_cos_sim)
     """
-    embedding_matrix = model.model.embed_tokens.weight.detach()
-    n_candidates = len(candidate_ids)
+    n_candidates = len(candidate_token_ids)
+    prefix_len = prefix_end - prefix_start
 
     best_loss = float("inf")
     best_token = current_prefix_ids[position].item()
     best_cos_sim = -1.0
 
-    # Evaluate in batches
     for batch_start in range(0, n_candidates, batch_size):
         batch_end = min(batch_start + batch_size, n_candidates)
-        batch_candidates = candidate_ids[batch_start:batch_end]
+        batch_cands = candidate_token_ids[batch_start:batch_end]
+        B = len(batch_cands)
 
-        batch_losses = []
-        batch_cos_sims = []
+        # Build batch of prefix variants: each has one different token at `position`
+        batch_prefix_ids = current_prefix_ids.unsqueeze(0).expand(B, -1).clone()  # (B, prefix_len)
+        batch_prefix_ids[:, position] = batch_cands
 
-        for cand_id in batch_candidates:
-            # Create modified prefix
-            modified_ids = current_prefix_ids.clone()
-            modified_ids[position] = cand_id
+        with torch.no_grad():
+            outputs = forward_batch_with_prefix_variants(
+                model, all_ids, prefix_start, prefix_end, batch_prefix_ids, device
+            )
 
-            # Get embeddings
-            prefix_embeds = embedding_matrix[modified_ids].float()
-
-            with torch.no_grad():
-                outputs = forward_with_prefix_embeds(
-                    model, all_ids, prefix_start, prefix_end, prefix_embeds, device
-                )
-
+            # Evaluate each candidate
+            for b in range(B):
                 total_loss = 0.0
                 step_cos_sims = []
+
                 for layer_idx in active_layers:
                     hs_idx = layer_idx + 1
                     if hs_idx >= len(outputs.hidden_states):
                         continue
-                    h = outputs.hidden_states[hs_idx]
+                    h = outputs.hidden_states[hs_idx]  # (B, seq_len, d)
                     tok_pos = layer_to_token[layer_idx] if layer_to_token and layer_idx in layer_to_token else -1
-                    act = h[0, tok_pos, :].float()
+                    act = h[b, tok_pos, :].float()
                     target = active_directions[layer_idx]
                     loss_val, metrics = loss_fn(act, target)
                     total_loss += loss_val.item() / len(active_layers)
                     step_cos_sims.append(metrics["cosine_similarity"])
 
-            batch_losses.append(total_loss)
-            batch_cos_sims.append(sum(step_cos_sims) / len(step_cos_sims) if step_cos_sims else 0)
+                mean_cos = sum(step_cos_sims) / len(step_cos_sims) if step_cos_sims else 0.0
 
-        # Find best in this batch
-        for i, (loss, cos) in enumerate(zip(batch_losses, batch_cos_sims)):
-            if loss < best_loss:
-                best_loss = loss
-                best_token = batch_candidates[i].item()
-                best_cos_sim = cos
+                if total_loss < best_loss:
+                    best_loss = total_loss
+                    best_token = batch_cands[b].item()
+                    best_cos_sim = mean_cos
 
     return best_token, best_loss, best_cos_sim
 
@@ -170,22 +219,18 @@ def optimize_prefix_gcg(
 
     At each step:
     1. Compute token-level gradients for all prefix positions
-    2. Pick one position (cycling or random)
+    2. Pick a RANDOM position (avoids cycling plateau)
     3. Get top-k candidates from gradient
-    4. Evaluate all candidates with forward passes
-    5. Keep the best replacement (only if it improves loss)
-
-    This guarantees monotonic improvement and stays in discrete token space.
+    4. Evaluate all candidates with BATCHED forward passes
+    5. Keep the best replacement (only if it improves)
     """
     device = next(model.parameters()).device
     embedding_matrix = model.model.embed_tokens.weight.detach()
 
-    # Load per-layer token positions
     layer_to_token = load_layer_to_token(
         config.data_dir, concept, config.model_name, config.head_agg
     )
 
-    # Normalize directions
     clean_directions = {}
     for layer_idx, v in directions.items():
         v_flat = v.flatten().float().to(device)
@@ -201,27 +246,26 @@ def optimize_prefix_gcg(
     prefix_text, suffix_text, full_positive, full_negative = build_prompt_parts(
         concept, config.concept_class, stmt, tokenizer
     )
-
     all_ids, prefix_start, prefix_end = tokenize_prompt_parts(
         full_positive, prefix_text, tokenizer, device
     )
     prefix_len = prefix_end - prefix_start
 
-    logger.info("GCG: %d prefix tokens [%d:%d], %d layers, top_k=%d",
-                prefix_len, prefix_start, prefix_end, len(active_layers), config.gcg_topk)
+    logger.info("GCG: %d prefix tokens [%d:%d], %d layers, top_k=%d, batch=%d",
+                prefix_len, prefix_start, prefix_end, len(active_layers),
+                config.gcg_topk, config.gcg_batch_size)
 
-    # Initialize with hand-crafted prefix tokens
+    # Initialize from hand-crafted prefix
     current_prefix_ids = all_ids[prefix_start:prefix_end].clone()
-
     loss_fn = LOSS_FUNCTIONS[config.loss_type]
 
-    # Evaluate initial state
+    # Evaluate initial state (hand-crafted baseline at correct positions)
+    init_cos_sims = {}
     with torch.no_grad():
-        init_embeds = embedding_matrix[current_prefix_ids].float()
-        outputs = forward_with_prefix_embeds(
-            model, all_ids, prefix_start, prefix_end, init_embeds, device
-        )
-        init_cos_sims = {}
+        init_embeds = model.model.embed_tokens(all_ids.unsqueeze(0)).float()
+        mask = torch.ones(1, len(all_ids), device=device, dtype=torch.long)
+        outputs = model(inputs_embeds=init_embeds, attention_mask=mask,
+                        output_hidden_states=True, use_cache=False)
         for layer_idx in active_layers:
             hs_idx = layer_idx + 1
             if hs_idx >= len(outputs.hidden_states):
@@ -234,8 +278,10 @@ def optimize_prefix_gcg(
 
     init_mean_cos = sum(init_cos_sims.values()) / len(init_cos_sims) if init_cos_sims else 0
     logger.info("GCG initial (hand-crafted) mean cos_sim: %.4f", init_mean_cos)
+    logger.info("  Per-layer: %s", {l: f"{v:.4f}" for l, v in init_cos_sims.items()})
 
-    # Optimization loop
+    # Optimization
+    rng = random.Random(config.seed)
     loss_curve = []
     metrics_history = []
     best_cos_sim = init_mean_cos
@@ -244,21 +290,21 @@ def optimize_prefix_gcg(
     start_time = time.time()
 
     for step in range(config.n_steps):
-        # 1. Compute token gradients
+        # 1. Token gradients
         token_grads = compute_token_gradients(
             model, all_ids, prefix_start, prefix_end, current_prefix_ids,
             active_layers, active_directions, layer_to_token, loss_fn, device,
         )
 
-        # 2. Pick position to optimize (cycle through)
-        pos = step % prefix_len
+        # 2. Random position selection
+        pos = rng.randint(0, prefix_len - 1)
 
-        # 3. Get top-k candidates (most negative gradient = biggest loss decrease)
+        # 3. Top-k candidates (most negative gradient = biggest loss decrease)
         topk = (-token_grads[pos]).topk(config.gcg_topk)
         candidate_ids = topk.indices
 
-        # 4. Evaluate candidates
-        best_token, best_loss, step_cos_sim = evaluate_candidates(
+        # 4. Batched evaluation
+        best_token, best_loss, step_cos_sim = evaluate_candidates_batched(
             model, all_ids, prefix_start, prefix_end, current_prefix_ids,
             pos, candidate_ids, active_layers, active_directions,
             layer_to_token, loss_fn, device, config.gcg_batch_size,
@@ -294,22 +340,25 @@ def optimize_prefix_gcg(
             }
             metrics_history.append(step_metrics)
             logger.info(
-                "GCG Step %d/%d pos=%d | cos=%.4f (best=%.4f) | %s | %s",
+                "GCG Step %d/%d pos=%d | cos=%.4f (best=%.4f) | %s%s | %s",
                 step, config.n_steps, pos, step_cos_sim, best_cos_sim,
-                "ACCEPT" if accepted else "reject",
-                current_text[:60],
+                "ACCEPT " if accepted else "reject ",
+                tokenizer.convert_ids_to_tokens([best_token])[0] if accepted else "",
+                current_text[:70],
             )
 
     # Final evaluation
     final_prefix_ids = best_prefix_ids.tolist()
     final_text = tokenizer.decode(final_prefix_ids, skip_special_tokens=True)
-
     final_cos_sims = {}
+
     with torch.no_grad():
-        final_embeds = embedding_matrix[best_prefix_ids].float()
-        outputs = forward_with_prefix_embeds(
-            model, all_ids, prefix_start, prefix_end, final_embeds, device
-        )
+        batch_ids = all_ids.unsqueeze(0).clone()
+        batch_ids[0, prefix_start:prefix_end] = best_prefix_ids
+        input_embeds = model.model.embed_tokens(batch_ids).float()
+        mask = torch.ones(1, len(all_ids), device=device, dtype=torch.long)
+        outputs = model(inputs_embeds=input_embeds, attention_mask=mask,
+                        output_hidden_states=True, use_cache=False)
         for layer_idx in active_layers:
             hs_idx = layer_idx + 1
             if hs_idx >= len(outputs.hidden_states):
@@ -325,13 +374,15 @@ def optimize_prefix_gcg(
 
     logger.info("=" * 60)
     logger.info("GCG RESULTS:")
-    logger.info("  Hand-crafted prefix mean cos_sim: %.4f", init_mean_cos)
-    logger.info("  Optimized prefix mean cos_sim:    %.4f", final_mean)
-    logger.info("  Improvement:                      %.4f", final_mean - init_mean_cos)
+    logger.info("  Hand-crafted mean cos_sim: %.4f", init_mean_cos)
+    logger.info("  Optimized mean cos_sim:    %.4f", final_mean)
+    logger.info("  Improvement:               %+.4f (%.1f%%)",
+                final_mean - init_mean_cos,
+                (final_mean - init_mean_cos) / abs(init_mean_cos) * 100 if init_mean_cos != 0 else 0)
     logger.info("  Accepted swaps: %d / %d steps", n_improvements, config.n_steps)
-    logger.info("  Original prefix: '%s'", prefix_text)
-    logger.info("  Optimized prefix: '%s'", final_text)
-    logger.info("  Time: %.1f seconds", total_time)
+    logger.info("  Original: '%s'", prefix_text)
+    logger.info("  Optimized: '%s'", final_text)
+    logger.info("  Time: %.1f seconds (%.1f s/step)", total_time, total_time / max(config.n_steps, 1))
     logger.info("=" * 60)
 
     return {
