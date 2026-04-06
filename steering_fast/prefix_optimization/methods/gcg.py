@@ -280,6 +280,30 @@ def optimize_prefix_gcg(
     logger.info("GCG initial (hand-crafted) mean cos_sim: %.4f", init_mean_cos)
     logger.info("  Per-layer: %s", {l: f"{v:.4f}" for l, v in init_cos_sims.items()})
 
+    # Evaluate NO-PREFIX baseline (the negative prompt, without concept prefix)
+    # This is the baseline the RFM was trained to discriminate FROM
+    no_prefix_cos_sims = {}
+    neg_ids = tokenizer.encode(full_negative, add_special_tokens=False, return_tensors="pt")[0].to(device)
+    with torch.no_grad():
+        neg_embeds = model.model.embed_tokens(neg_ids.unsqueeze(0)).float()
+        neg_mask = torch.ones(1, len(neg_ids), device=device, dtype=torch.long)
+        neg_outputs = model(inputs_embeds=neg_embeds, attention_mask=neg_mask,
+                            output_hidden_states=True, use_cache=False)
+        for layer_idx in active_layers:
+            hs_idx = layer_idx + 1
+            if hs_idx >= len(neg_outputs.hidden_states):
+                continue
+            h = neg_outputs.hidden_states[hs_idx]
+            tok_pos = layer_to_token[layer_idx] if layer_to_token and layer_idx in layer_to_token else -1
+            act = h[0, tok_pos, :].float()
+            cs = F.cosine_similarity(act.unsqueeze(0), active_directions[layer_idx].unsqueeze(0)).item()
+            no_prefix_cos_sims[layer_idx] = cs
+
+    no_prefix_mean = sum(no_prefix_cos_sims.values()) / len(no_prefix_cos_sims) if no_prefix_cos_sims else 0
+    handcrafted_delta = init_mean_cos - no_prefix_mean
+    logger.info("No-prefix baseline mean cos_sim: %.4f", no_prefix_mean)
+    logger.info("Hand-crafted delta (vs no-prefix): %.4f", handcrafted_delta)
+
     # Optimization
     rng = random.Random(config.seed)
     loss_curve = []
@@ -372,13 +396,15 @@ def optimize_prefix_gcg(
     final_mean = sum(final_cos_sims.values()) / len(final_cos_sims) if final_cos_sims else 0
     total_time = time.time() - start_time
 
+    optimized_delta = final_mean - no_prefix_mean
+
     logger.info("=" * 60)
     logger.info("GCG RESULTS:")
-    logger.info("  Hand-crafted mean cos_sim: %.4f", init_mean_cos)
-    logger.info("  Optimized mean cos_sim:    %.4f", final_mean)
-    logger.info("  Improvement:               %+.4f (%.1f%%)",
-                final_mean - init_mean_cos,
-                (final_mean - init_mean_cos) / abs(init_mean_cos) * 100 if init_mean_cos != 0 else 0)
+    logger.info("  No-prefix baseline cos_sim:  %.4f", no_prefix_mean)
+    logger.info("  Hand-crafted prefix cos_sim: %.4f (delta=%+.4f)", init_mean_cos, handcrafted_delta)
+    logger.info("  Optimized prefix cos_sim:    %.4f (delta=%+.4f)", final_mean, optimized_delta)
+    logger.info("  Improvement over hand-crafted: %+.4f", final_mean - init_mean_cos)
+    logger.info("  Improvement over no-prefix:    %+.4f", optimized_delta)
     logger.info("  Accepted swaps: %d / %d steps", n_improvements, config.n_steps)
     logger.info("  Original: '%s'", prefix_text)
     logger.info("  Optimized: '%s'", final_text)
@@ -391,11 +417,15 @@ def optimize_prefix_gcg(
         "original_prefix": prefix_text,
         "optimized_prefix": final_text,
         "optimized_token_ids": final_prefix_ids,
+        "no_prefix_per_layer_cos_sims": no_prefix_cos_sims,
+        "no_prefix_mean_cos_sim": no_prefix_mean,
         "handcrafted_per_layer_cos_sims": init_cos_sims,
         "handcrafted_mean_cos_sim": init_mean_cos,
+        "handcrafted_delta": handcrafted_delta,
         "optimized_per_layer_cos_sims": final_cos_sims,
         "optimized_mean_cos_sim": final_mean,
-        "improvement": final_mean - init_mean_cos,
+        "optimized_delta": optimized_delta,
+        "improvement_over_handcrafted": final_mean - init_mean_cos,
         "n_improvements": n_improvements,
         "loss_curve": loss_curve,
         "metrics_history": metrics_history,
