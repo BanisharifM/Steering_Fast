@@ -23,12 +23,13 @@
 #SBATCH --output=logs/slurm/%x_%j.out
 #SBATCH --error=logs/slurm/%x_%j.out
 
-# --- Dynamic path resolution ---
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# --- Path resolution ---
+# SBATCH copies scripts to /var/spool, so BASH_SOURCE is unreliable.
+# Use SLURM_SUBMIT_DIR (where sbatch was invoked) or hardcode.
+PROJECT_DIR="${SLURM_SUBMIT_DIR:-/work/hdd/bdau/mbanisharifdehkordi/LLM_Steering/steering_fast}"
 PARENT_DIR="$(cd "${PROJECT_DIR}/.." && pwd)"
 
-# Python detection (same as env.sh)
+# Python detection
 PYTHON="${PYTHON:-$(find "${PARENT_DIR}" -path "*/conda_envs/*/bin/python" -type f 2>/dev/null | head -1)}"
 if [ -z "${PYTHON}" ] || [ ! -f "${PYTHON}" ]; then
     PYTHON="$(which python)"
@@ -38,10 +39,12 @@ export CACHE_DIR="${CACHE_DIR:-}"
 export HF_HOME="${HF_HOME:-}"
 export PYTHONUNBUFFERED=1
 
-DATA_DIR="${DATA_DIR:-${PROJECT_DIR}/data}"
+# Resolve symlink to absolute path for compute nodes
+DATA_DIR="${DATA_DIR:-$(readlink -f "${PROJECT_DIR}/data" 2>/dev/null || echo "${PROJECT_DIR}/data")}"
 OUTPUT_DIR="${PROJECT_DIR}/outputs/prefix_optimization"
 
 # Verify directions exist
+echo "Data dir resolved to: ${DATA_DIR}"
 DIRECTION_FILE="${DATA_DIR}/directions/rfm_bacteria_tokenidx_max_attn_per_layer_block_softlabels_llama_3.1_8b.pkl"
 if [ ! -f "${DIRECTION_FILE}" ]; then
     echo "ERROR: No direction files found. Run the steering pipeline first."
