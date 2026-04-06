@@ -44,6 +44,7 @@ if [ -z "${PYTHON:-}" ] || [ ! -f "${PYTHON:-}" ]; then
 fi
 
 export PYTHONUNBUFFERED=1
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 DATA_DIR="${DATA_DIR:-$(readlink -f "${PROJECT_DIR}/data" 2>/dev/null || echo "${PROJECT_DIR}/data")}"
 OUTPUT_DIR="${PROJECT_DIR}/outputs/prefix_optimization"
 CONCEPT_CLASS="${CONCEPT_CLASS:-fears}"
@@ -59,7 +60,7 @@ ARGS=(
     --output_dir "${OUTPUT_DIR}"
     --n_steps 200
     --gcg_topk 256
-    --gcg_batch_size 64
+    --gcg_batch_size 16
     --log_every 10
     --seed 42
 )
