@@ -25,18 +25,35 @@
 
 # --- Path resolution ---
 # SBATCH copies scripts to /var/spool, so BASH_SOURCE is unreliable.
-# Use SLURM_SUBMIT_DIR (where sbatch was invoked) or hardcode.
+# Use SLURM_SUBMIT_DIR (where sbatch was invoked) as the project root.
 PROJECT_DIR="${SLURM_SUBMIT_DIR:-/work/hdd/bdau/mbanisharifdehkordi/LLM_Steering/steering_fast}"
-PARENT_DIR="$(cd "${PROJECT_DIR}/.." && pwd)"
+PARENT_DIR="$(dirname "${PROJECT_DIR}")"
 
-# Python detection
-PYTHON="${PYTHON:-$(find "${PARENT_DIR}" -path "*/conda_envs/*/bin/python" -type f 2>/dev/null | head -1)}"
-if [ -z "${PYTHON}" ] || [ ! -f "${PYTHON}" ]; then
-    PYTHON="$(which python)"
+# Source the shared environment (sets PYTHON, CACHE_DIR, etc.)
+# env.sh uses BASH_SOURCE internally, so we must source it from its real path.
+ENV_SCRIPT="${PROJECT_DIR}/scripts/env.sh"
+if [ -f "${ENV_SCRIPT}" ]; then
+    source "${ENV_SCRIPT}"
+else
+    echo "WARNING: env.sh not found at ${ENV_SCRIPT}"
 fi
 
-export CACHE_DIR="${CACHE_DIR:-}"
-export HF_HOME="${HF_HOME:-}"
+# Fallback if env.sh did not set PYTHON
+if [ -z "${PYTHON:-}" ] || [ ! -f "${PYTHON:-}" ]; then
+    # Search known conda env locations
+    for candidate in \
+        "${PARENT_DIR}/conda_envs/llm_steering/bin/python" \
+        "${HOME}/conda_envs/llm_steering/bin/python" \
+        "${HOME}/.conda/envs/llm_steering/bin/python" \
+        "$(which python3 2>/dev/null)" \
+        "$(which python 2>/dev/null)"; do
+        if [ -f "${candidate}" ]; then
+            PYTHON="${candidate}"
+            break
+        fi
+    done
+fi
+
 export PYTHONUNBUFFERED=1
 
 # Resolve symlink to absolute path for compute nodes

@@ -33,9 +33,24 @@ PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PARENT_DIR="$(cd "${PROJECT_DIR}/.." && pwd)"
 
 # Use environment variables with sensible defaults
-PYTHON="${PYTHON:-$(find "${PARENT_DIR}" -path "*/conda_envs/*/bin/python" -type f 2>/dev/null | head -1)}"
-if [ -z "${PYTHON}" ] || [ ! -f "${PYTHON}" ]; then
-    PYTHON="$(which python)"
+# Python: search known conda env locations (conda may be above PARENT_DIR)
+USER_HOME="$(dirname "${PARENT_DIR}")"
+for _candidate in \
+    "${PARENT_DIR}/conda_envs/llm_steering/bin/python" \
+    "${USER_HOME}/conda_envs/llm_steering/bin/python" \
+    "${HOME}/conda_envs/llm_steering/bin/python" \
+    "${HOME}/.conda/envs/llm_steering/bin/python" \
+    "$(which python3 2>/dev/null)" \
+    "$(which python 2>/dev/null)"; do
+    if [ -f "${_candidate}" ]; then
+        PYTHON="${PYTHON:-${_candidate}}"
+        break
+    fi
+done
+unset _candidate USER_HOME
+if [ -z "${PYTHON:-}" ] || [ ! -f "${PYTHON:-}" ]; then
+    echo "ERROR: Python not found. Set PYTHON environment variable."
+    exit 1
 fi
 
 export CACHE_DIR="${CACHE_DIR:-}"

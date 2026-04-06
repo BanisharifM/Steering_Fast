@@ -24,9 +24,14 @@ if [ -z "${PYTHON:-}" ]; then
         export PYTHON="${ENV_PATH}/bin/python"
     else
         # Auto-detect: look for conda env in common locations
+        # Check multiple parent levels since conda env may be above the project tree
+        USER_HOME="$(dirname "${PARENT_DIR}")"
         for candidate in \
             "${PARENT_DIR}/conda_envs/llm_steering/bin/python" \
+            "${USER_HOME}/conda_envs/llm_steering/bin/python" \
+            "${HOME}/conda_envs/llm_steering/bin/python" \
             "${HOME}/.conda/envs/llm_steering/bin/python" \
+            "$(which python3 2>/dev/null)" \
             "$(which python 2>/dev/null)"; do
             if [ -f "${candidate}" ]; then
                 export PYTHON="${candidate}"
