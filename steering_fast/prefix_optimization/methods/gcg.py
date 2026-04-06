@@ -411,8 +411,14 @@ def optimize_prefix_gcg(
 
         accepted = False
 
-        # Try 2-position swap if single-position has plateaued for 20+ steps
-        if config.gcg_multi_swap and steps_without_improvement >= 20:
+        # Early stopping: if no improvement for 50 steps, we've converged
+        if steps_without_improvement >= 50:
+            logger.info("  Early stopping at step %d: no improvement for %d steps.",
+                        step, steps_without_improvement)
+            break
+
+        # Try 2-position swap ONCE when single-position first plateaus at 20 steps
+        if config.gcg_multi_swap and steps_without_improvement == 20:
             logger.info("  Step %d: trying 2-position swap (plateaued for %d steps)...",
                         step, steps_without_improvement)
             swap_result, swap_cos = evaluate_two_position_swap(
