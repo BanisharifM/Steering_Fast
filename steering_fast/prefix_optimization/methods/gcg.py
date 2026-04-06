@@ -208,6 +208,95 @@ def evaluate_candidates_batched(
     return best_token, best_loss, best_cos_sim
 
 
+def evaluate_two_position_swap(
+    model,
+    all_ids: torch.Tensor,
+    prefix_start: int,
+    prefix_end: int,
+    current_prefix_ids: torch.Tensor,
+    token_grads: torch.Tensor,
+    active_layers: List[int],
+    active_directions: Dict[int, torch.Tensor],
+    layer_to_token: Optional[Dict[int, int]],
+    loss_fn,
+    device: torch.device,
+    top_per_pos: int = 8,
+    batch_size: int = 64,
+) -> tuple:
+    """Try swapping 2 positions simultaneously.
+
+    For each pair of positions, take top_per_pos candidates per position,
+    form all combinations (top_per_pos^2 per pair), evaluate the best pairs.
+
+    Returns:
+        (pos1, tok1, pos2, tok2, best_cos_sim) or None if no improvement
+    """
+    prefix_len = prefix_end - prefix_start
+
+    # Get top candidates per position from gradients
+    per_pos_candidates = {}
+    for p in range(prefix_len):
+        topk = (-token_grads[p]).topk(top_per_pos)
+        per_pos_candidates[p] = topk.indices
+
+    # Try all position pairs, but limit to most promising
+    # Sort positions by gradient magnitude (most improvable first)
+    pos_importance = [(-token_grads[p]).max().item() for p in range(prefix_len)]
+    sorted_positions = sorted(range(prefix_len), key=lambda p: pos_importance[p], reverse=True)
+    top_positions = sorted_positions[:5]  # only try top-5 most important positions
+
+    best_overall_cos = -1.0
+    best_swap = None
+
+    for i, p1 in enumerate(top_positions):
+        for p2 in top_positions[i + 1:]:
+            cands_p1 = per_pos_candidates[p1]
+            cands_p2 = per_pos_candidates[p2]
+
+            # Form all combinations
+            candidates = []
+            for t1 in cands_p1:
+                for t2 in cands_p2:
+                    candidates.append((t1.item(), t2.item()))
+
+            # Evaluate in batches
+            for batch_start in range(0, len(candidates), batch_size):
+                batch_end = min(batch_start + batch_size, len(candidates))
+                batch = candidates[batch_start:batch_end]
+                B = len(batch)
+
+                batch_prefix_ids = current_prefix_ids.unsqueeze(0).expand(B, -1).clone()
+                for b_idx, (t1, t2) in enumerate(batch):
+                    batch_prefix_ids[b_idx, p1] = t1
+                    batch_prefix_ids[b_idx, p2] = t2
+
+                with torch.no_grad():
+                    outputs = forward_batch_with_prefix_variants(
+                        model, all_ids, prefix_start, prefix_end, batch_prefix_ids, device
+                    )
+
+                    for b_idx in range(B):
+                        step_cos_sims = []
+                        for layer_idx in active_layers:
+                            hs_idx = layer_idx + 1
+                            if hs_idx >= len(outputs.hidden_states):
+                                continue
+                            h = outputs.hidden_states[hs_idx]
+                            tok_pos = layer_to_token[layer_idx] if layer_to_token and layer_idx in layer_to_token else -1
+                            act = h[b_idx, tok_pos, :].to(torch.float32)
+                            target = active_directions[layer_idx]
+                            _, metrics = loss_fn(act, target)
+                            step_cos_sims.append(metrics["cosine_similarity"])
+
+                        mean_cos = sum(step_cos_sims) / len(step_cos_sims) if step_cos_sims else 0.0
+                        if mean_cos > best_overall_cos:
+                            best_overall_cos = mean_cos
+                            t1, t2 = batch[b_idx]
+                            best_swap = (p1, t1, p2, t2)
+
+    return best_swap, best_overall_cos
+
+
 def optimize_prefix_gcg(
     model,
     tokenizer,
@@ -310,6 +399,7 @@ def optimize_prefix_gcg(
     best_cos_sim = init_mean_cos
     best_prefix_ids = current_prefix_ids.clone()
     n_improvements = 0
+    steps_without_improvement = 0
     start_time = time.time()
 
     for step in range(config.n_steps):
@@ -319,30 +409,55 @@ def optimize_prefix_gcg(
             active_layers, active_directions, layer_to_token, loss_fn, device,
         )
 
-        # 2. Random position selection
-        pos = rng.randint(0, prefix_len - 1)
+        accepted = False
 
-        # 3. Top-k candidates (most negative gradient = biggest loss decrease)
-        topk = (-token_grads[pos]).topk(config.gcg_topk)
-        candidate_ids = topk.indices
+        # Try 2-position swap if single-position has plateaued for 20+ steps
+        if config.gcg_multi_swap and steps_without_improvement >= 20:
+            logger.info("  Step %d: trying 2-position swap (plateaued for %d steps)...",
+                        step, steps_without_improvement)
+            swap_result, swap_cos = evaluate_two_position_swap(
+                model, all_ids, prefix_start, prefix_end, current_prefix_ids,
+                token_grads, active_layers, active_directions,
+                layer_to_token, loss_fn, device,
+            )
+            if swap_result and swap_cos > best_cos_sim:
+                p1, t1, p2, t2 = swap_result
+                current_prefix_ids[p1] = t1
+                current_prefix_ids[p2] = t2
+                best_cos_sim = swap_cos
+                best_prefix_ids = current_prefix_ids.clone()
+                n_improvements += 1
+                steps_without_improvement = 0
+                accepted = True
+                logger.info("  2-position swap ACCEPTED: pos %d+%d, cos=%.4f", p1, p2, swap_cos)
 
-        # 4. Batched evaluation
-        best_token, best_loss, step_cos_sim = evaluate_candidates_batched(
-            model, all_ids, prefix_start, prefix_end, current_prefix_ids,
-            pos, candidate_ids, active_layers, active_directions,
-            layer_to_token, loss_fn, device, config.gcg_batch_size,
-        )
+        if not accepted:
+            # Standard single-position GCG
+            # 2. Random position selection
+            pos = rng.randint(0, prefix_len - 1)
 
-        # 5. Accept if improved
-        old_token = current_prefix_ids[pos].item()
-        if step_cos_sim > best_cos_sim:
-            current_prefix_ids[pos] = best_token
-            best_cos_sim = step_cos_sim
-            best_prefix_ids = current_prefix_ids.clone()
-            n_improvements += 1
-            accepted = True
-        else:
-            accepted = False
+            # 3. Top-k candidates
+            topk = (-token_grads[pos]).topk(config.gcg_topk)
+            candidate_ids = topk.indices
+
+            # 4. Batched evaluation
+            best_token, best_loss, step_cos_sim = evaluate_candidates_batched(
+                model, all_ids, prefix_start, prefix_end, current_prefix_ids,
+                pos, candidate_ids, active_layers, active_directions,
+                layer_to_token, loss_fn, device, config.gcg_batch_size,
+            )
+
+            # 5. Accept if improved
+            old_token = current_prefix_ids[pos].item()
+            if step_cos_sim > best_cos_sim:
+                current_prefix_ids[pos] = best_token
+                best_cos_sim = step_cos_sim
+                best_prefix_ids = current_prefix_ids.clone()
+                n_improvements += 1
+                steps_without_improvement = 0
+                accepted = True
+            else:
+                steps_without_improvement += 1
 
         loss_curve.append(best_loss)
 
