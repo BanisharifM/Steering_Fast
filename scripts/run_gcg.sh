@@ -1,8 +1,9 @@
 #!/bin/bash
 # ============================================================================
-# SLURM Job: GCG (Greedy Coordinate Gradient) prefix optimization
+# SLURM Job: GCG Prefix Optimization (single model load, all experiments)
 #
-# v2: batched candidate evaluation, random position selection.
+# Loads model ONCE, runs GCG with multiple configs sequentially.
+# ~7 min model load + ~5 min per experiment = ~25 min total (vs ~50 min before)
 #
 # Usage:
 #   sbatch scripts/run_gcg.sh
@@ -16,7 +17,7 @@
 #SBATCH --gpus-per-node=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64g
-#SBATCH --time=02:00:00
+#SBATCH --time=01:00:00
 #SBATCH --output=logs/slurm/%x_%j.out
 #SBATCH --error=logs/slurm/%x_%j.out
 
@@ -46,7 +47,7 @@ if [ -z "${CONCEPT}" ]; then
 fi
 
 echo "============================================"
-echo "  GCG Prefix Optimization (v2: batched)"
+echo "  GCG Prefix Optimization (single load)"
 echo "  Concept: ${CONCEPT}"
 echo "  Node: $(hostname)"
 echo "  GPU:  $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'N/A')"
@@ -58,54 +59,22 @@ echo "============================================"
 cd "${PROJECT_DIR}"
 mkdir -p "${OUTPUT_DIR}" logs/slurm
 
-# ============================================================================
-# Test 1: GCG single layer 16 -- 200 steps with batched eval
-# ============================================================================
-echo ""
-echo ">>> GCG: Layer 16, top_k=256, batch=64, 200 steps"
-echo "-----------------------------------------------------------"
-${PYTHON} -u -m steering_fast.prefix_optimization.run_experiment \
+# Single process: load model once, run all experiments
+${PYTHON} -u -m steering_fast.prefix_optimization.run_all \
     --concept "${CONCEPT}" \
     --concept_class fears \
     --data_dir "${DATA_DIR}" \
     --cache_dir "${CACHE_DIR:-}" \
-    --method gcg \
-    --layers 16 \
+    --model_name llama_3.1_8b \
+    --output_dir "${OUTPUT_DIR}" \
     --n_steps 200 \
-    --loss_type cosine \
-    --output_dir "${OUTPUT_DIR}/gcg_v2_layer16" \
+    --gcg_topk 256 \
+    --gcg_batch_size 64 \
     --log_every 10 \
     --seed 42 \
     2>&1
-
-echo ""
-echo ">>> GCG layer 16 complete: $(date)"
-
-# ============================================================================
-# Test 2: GCG all layers -- 200 steps
-# ============================================================================
-echo ""
-echo ">>> GCG: All layers, top_k=256, batch=64, 200 steps"
-echo "-----------------------------------------------------------"
-${PYTHON} -u -m steering_fast.prefix_optimization.run_experiment \
-    --concept "${CONCEPT}" \
-    --concept_class fears \
-    --data_dir "${DATA_DIR}" \
-    --cache_dir "${CACHE_DIR:-}" \
-    --method gcg \
-    --layers all \
-    --n_steps 200 \
-    --loss_type cosine \
-    --output_dir "${OUTPUT_DIR}/gcg_v2_all_layers" \
-    --log_every 10 \
-    --seed 42 \
-    2>&1
-
-echo ""
-echo ">>> GCG all layers complete: $(date)"
 
 echo ""
 echo "============================================"
-echo "  GCG tests complete: $(date)"
-echo "  Results in: ${OUTPUT_DIR}"
+echo "  Complete: $(date)"
 echo "============================================"

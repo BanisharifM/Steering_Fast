@@ -56,22 +56,20 @@ def forward_batch_with_prefix_variants(
     seq_len = len(all_ids)
     prefix_len = prefix_end - prefix_start
 
-    # Build batch of input IDs
+    # Build batch of input IDs -- stay in model's native dtype (bf16)
     batch_ids = all_ids.unsqueeze(0).expand(B, -1).clone()  # (B, seq_len)
     batch_ids[:, prefix_start:prefix_end] = candidate_prefix_ids_batch
 
     attention_mask = torch.ones(B, seq_len, device=device, dtype=torch.long)
 
-    # Embed all at once
     with torch.no_grad():
-        input_embeds = model.model.embed_tokens(batch_ids).float()  # (B, seq_len, d)
-
-    outputs = model(
-        inputs_embeds=input_embeds,
-        attention_mask=attention_mask,
-        output_hidden_states=True,
-        use_cache=False,
-    )
+        # Use input_ids directly instead of inputs_embeds -- faster, no embedding lookup overhead
+        outputs = model(
+            input_ids=batch_ids,
+            attention_mask=attention_mask,
+            output_hidden_states=True,
+            use_cache=False,
+        )
     return outputs
 
 
@@ -191,7 +189,7 @@ def evaluate_candidates_batched(
                         continue
                     h = outputs.hidden_states[hs_idx]  # (B, seq_len, d)
                     tok_pos = layer_to_token[layer_idx] if layer_to_token and layer_idx in layer_to_token else -1
-                    act = h[b, tok_pos, :].float()
+                    act = h[b, tok_pos, :].to(torch.float32)
                     target = active_directions[layer_idx]
                     loss_val, metrics = loss_fn(act, target)
                     total_loss += loss_val.item() / len(active_layers)
@@ -262,9 +260,8 @@ def optimize_prefix_gcg(
     # Evaluate initial state (hand-crafted baseline at correct positions)
     init_cos_sims = {}
     with torch.no_grad():
-        init_embeds = model.model.embed_tokens(all_ids.unsqueeze(0)).float()
         mask = torch.ones(1, len(all_ids), device=device, dtype=torch.long)
-        outputs = model(inputs_embeds=init_embeds, attention_mask=mask,
+        outputs = model(input_ids=all_ids.unsqueeze(0), attention_mask=mask,
                         output_hidden_states=True, use_cache=False)
         for layer_idx in active_layers:
             hs_idx = layer_idx + 1
@@ -272,7 +269,7 @@ def optimize_prefix_gcg(
                 continue
             h = outputs.hidden_states[hs_idx]
             tok_pos = layer_to_token[layer_idx] if layer_to_token and layer_idx in layer_to_token else -1
-            act = h[0, tok_pos, :].float()
+            act = h[0, tok_pos, :].to(torch.float32)
             cs = F.cosine_similarity(act.unsqueeze(0), active_directions[layer_idx].unsqueeze(0)).item()
             init_cos_sims[layer_idx] = cs
 
@@ -285,9 +282,8 @@ def optimize_prefix_gcg(
     no_prefix_cos_sims = {}
     neg_ids = tokenizer.encode(full_negative, add_special_tokens=False, return_tensors="pt")[0].to(device)
     with torch.no_grad():
-        neg_embeds = model.model.embed_tokens(neg_ids.unsqueeze(0)).float()
         neg_mask = torch.ones(1, len(neg_ids), device=device, dtype=torch.long)
-        neg_outputs = model(inputs_embeds=neg_embeds, attention_mask=neg_mask,
+        neg_outputs = model(input_ids=neg_ids.unsqueeze(0), attention_mask=neg_mask,
                             output_hidden_states=True, use_cache=False)
         for layer_idx in active_layers:
             hs_idx = layer_idx + 1
@@ -295,7 +291,7 @@ def optimize_prefix_gcg(
                 continue
             h = neg_outputs.hidden_states[hs_idx]
             tok_pos = layer_to_token[layer_idx] if layer_to_token and layer_idx in layer_to_token else -1
-            act = h[0, tok_pos, :].float()
+            act = h[0, tok_pos, :].to(torch.float32)
             cs = F.cosine_similarity(act.unsqueeze(0), active_directions[layer_idx].unsqueeze(0)).item()
             no_prefix_cos_sims[layer_idx] = cs
 
@@ -377,11 +373,10 @@ def optimize_prefix_gcg(
     final_cos_sims = {}
 
     with torch.no_grad():
-        batch_ids = all_ids.unsqueeze(0).clone()
-        batch_ids[0, prefix_start:prefix_end] = best_prefix_ids
-        input_embeds = model.model.embed_tokens(batch_ids).float()
+        final_ids = all_ids.clone()
+        final_ids[prefix_start:prefix_end] = best_prefix_ids
         mask = torch.ones(1, len(all_ids), device=device, dtype=torch.long)
-        outputs = model(inputs_embeds=input_embeds, attention_mask=mask,
+        outputs = model(input_ids=final_ids.unsqueeze(0), attention_mask=mask,
                         output_hidden_states=True, use_cache=False)
         for layer_idx in active_layers:
             hs_idx = layer_idx + 1
@@ -389,7 +384,7 @@ def optimize_prefix_gcg(
                 continue
             h = outputs.hidden_states[hs_idx]
             tok_pos = layer_to_token[layer_idx] if layer_to_token and layer_idx in layer_to_token else -1
-            act = h[0, tok_pos, :].float()
+            act = h[0, tok_pos, :].to(torch.float32)
             cs = F.cosine_similarity(act.unsqueeze(0), active_directions[layer_idx].unsqueeze(0)).item()
             final_cos_sims[layer_idx] = cs
 
