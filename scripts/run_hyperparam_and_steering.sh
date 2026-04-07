@@ -102,6 +102,22 @@ ${PYTHON} -u -m steering_fast.prefix_optimization.evaluate_steering \
     --coefficient 0.8 \
     2>&1
 
+# ============================================================================
+# Part 4: Generalization test - do GCG prefixes work across different statements?
+# ============================================================================
+echo ""
+echo ">>> GENERALIZATION: 10 concepts, 20 statements each"
+echo "-----------------------------------------------------------"
+${PYTHON} -u -m steering_fast.prefix_optimization.evaluate_generalization \
+    --results_dir "${OUTPUT_DIR}/llama_3.1_8b/fears" \
+    --data_dir "${DATA_DIR}" \
+    --cache_dir "${CACHE_DIR}" \
+    --model_name llama_3.1_8b \
+    --concept_class fears \
+    --n_concepts 10 \
+    --n_statements 20 \
+    2>&1
+
 echo ""
 echo "============================================"
 echo "  All complete: $(date)"
