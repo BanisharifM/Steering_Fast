@@ -1,0 +1,81 @@
+======================================================================
+GCG PREFIX OPTIMIZATION: FULL ANALYSIS (100 concepts)
+======================================================================
+
+LAYER 16 (SINGLE LAYER)
+  Concepts improved: 100/100 (100.0%)
+  Mean no-prefix baseline:  -0.1665
+  Mean handcrafted cos_sim: 0.1472
+  Mean optimized cos_sim:   0.3182
+  Mean improvement:         0.1711
+  Median improvement:       0.1603
+  Std improvement:          0.0734
+  Min improvement:          0.0437
+  Max improvement:          0.3793
+  Mean delta (vs no-prefix):0.4848
+
+ALL 31 LAYERS (MEAN)
+  Concepts improved: 100/100 (100.0%)
+  Mean handcrafted cos_sim: 0.1880
+  Mean optimized cos_sim:   0.2533
+  Mean improvement:         0.0653
+  Median improvement:       0.0634
+
+CORRELATION ANALYSIS
+  Pearson(handcrafted, improvement) at L16: -0.4407
+  -> Strong negative: concepts with high baselines improve less (diminishing returns)
+
+TOP 10 MOST IMPROVED (Layer 16)
+  long words                 +0.043 -> +0.422  (+0.379)
+  fire                       +0.041 -> +0.378  (+0.337)
+  mushrooms                  +0.115 -> +0.446  (+0.331)
+  cheese                     +0.080 -> +0.404  (+0.324)
+  dogs                       +0.064 -> +0.367  (+0.303)
+  peanut butter              +0.079 -> +0.376  (+0.298)
+  spiders                    +0.127 -> +0.415  (+0.288)
+  bugs                       +0.056 -> +0.338  (+0.282)
+  insects                    +0.105 -> +0.385  (+0.279)
+  birds                      +0.081 -> +0.358  (+0.277)
+
+BOTTOM 10 LEAST IMPROVED (Layer 16)
+  mirrors at night           +0.420 -> +0.495  (+0.075)
+  bathing                    +0.468 -> +0.539  (+0.071)
+  clothing                   +0.564 -> +0.634  (+0.070)
+  driving                    +0.523 -> +0.591  (+0.069)
+  dentists                   +0.533 -> +0.601  (+0.069)
+  speed                      +0.586 -> +0.653  (+0.068)
+  blood                      +0.576 -> +0.635  (+0.059)
+  cars                       +0.600 -> +0.653  (+0.053)
+  public speaking            +0.502 -> +0.550  (+0.048)
+  doctors                    +0.605 -> +0.649  (+0.044)
+
+TOKEN PATTERN ANALYSIS
+  Original tokens that survive optimization (Layer 16):
+    Personify         11/100  ( 11.0%)  #####
+    someone           85/100  ( 85.0%)  ##########################################
+    who               73/100  ( 73.0%)  ####################################
+    is                28/100  ( 28.0%)  ##############
+    terrified         92/100  ( 92.0%)  ##############################################
+    of                90/100  ( 90.0%)  #############################################
+
+  Most common NEW tokens in optimized prefixes:
+    Putin                 appears in 4/100 concepts (4.0%)
+    Conversely            appears in 3/100 concepts (3.0%)
+    ?                     appears in 3/100 concepts (3.0%)
+    :                     appears in 3/100 concepts (3.0%)
+    slang                 appears in 3/100 concepts (3.0%)
+    becoming              appears in 2/100 concepts (2.0%)
+    CompletableFuture     appears in 2/100 concepts (2.0%)
+    Reply                 appears in 2/100 concepts (2.0%)
+    somebody              appears in 2/100 concepts (2.0%)
+    properly              appears in 2/100 concepts (2.0%)
+    personally            appears in 2/100 concepts (2.0%)
+    and                   appears in 2/100 concepts (2.0%)
+    Why                   appears in 2/100 concepts (2.0%)
+    write                 appears in 2/100 concepts (2.0%)
+    at                    appears in 2/100 concepts (2.0%)
+
+TIMING
+  Mean time per concept (L16): 210.7s
+  Total time (L16 only): 351.2 min
+  Total time (all experiments): ~702.3 min
