@@ -49,7 +49,7 @@ class PrefixOptConfig:
     layer_weighting: str = "uniform"  # uniform, uncertainty, progressive
 
     # Multi-statement
-    n_statements: int = 1  # number of general statements to average over
+    n_statements: int = 5  # number of general statements to average over (1 = overfits, 5 = good trade-off)
 
     # Method selection
     method: str = "gradient"  # gradient, jacobian, logit_lens, agop, gcg, all

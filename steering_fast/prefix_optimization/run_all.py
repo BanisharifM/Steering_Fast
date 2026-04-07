@@ -358,6 +358,7 @@ def main():
     parser.add_argument("--gcg_topk", type=int, default=256)
     parser.add_argument("--gcg_batch_size", type=int, default=64)
     parser.add_argument("--grad_clip", type=float, default=1.0)
+    parser.add_argument("--n_statements", type=int, default=5, help="Number of statements to average over (anti-overfitting)")
 
     args = parser.parse_args()
 
@@ -414,6 +415,7 @@ def main():
         gcg_topk=args.gcg_topk,
         gcg_batch_size=args.gcg_batch_size,
         grad_clip=args.grad_clip,
+        n_statements=args.n_statements,
     )
 
     run_all_experiments(config, concepts=concepts)
