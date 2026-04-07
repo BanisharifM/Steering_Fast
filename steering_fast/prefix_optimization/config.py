@@ -58,7 +58,7 @@ class PrefixOptConfig:
     jacobian_rank: int = 64  # rank for randomized SVD
 
     # GCG-specific
-    gcg_topk: int = 256  # top-k candidates per position
+    gcg_topk: int = 512  # top-k candidates per position (512 better for multi-statement)
     gcg_batch_size: int = 64  # batch size for candidate evaluation (uses model.model to skip logits)
     gcg_n_restarts: int = 1  # number of random restarts (each with different random init)
     gcg_multi_swap: bool = False  # try 2-position swaps when single-position plateaus

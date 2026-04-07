@@ -20,7 +20,7 @@
 #SBATCH --gpus-per-node=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64g
-#SBATCH --time=08:00:00
+#SBATCH --time=12:00:00
 #SBATCH --output=logs/slurm/%x_%A_%a.out
 #SBATCH --error=logs/slurm/%x_%A_%a.out
 
@@ -58,7 +58,7 @@ ARGS=(
     --model_name llama_3.1_8b
     --output_dir "${OUTPUT_DIR}"
     --n_steps 200
-    --gcg_topk 256
+    --gcg_topk 512
     --gcg_batch_size 64
     --log_every 10
     --seed 42

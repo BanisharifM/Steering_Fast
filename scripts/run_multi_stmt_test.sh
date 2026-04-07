@@ -11,7 +11,7 @@
 #SBATCH --gpus-per-node=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64g
-#SBATCH --time=04:00:00
+#SBATCH --time=12:00:00
 #SBATCH --output=logs/slurm/%x_%j.out
 #SBATCH --error=logs/slurm/%x_%j.out
 
@@ -56,7 +56,7 @@ ${PYTHON} -u -m steering_fast.prefix_optimization.run_all \
     --cache_dir "${CACHE_DIR}" \
     --all_concepts --smoke_test 10 \
     --output_dir "${OUTPUT_DIR}" \
-    --n_steps 200 --gcg_topk 256 --gcg_batch_size 64 \
+    --n_steps 200 --gcg_topk 512 --gcg_batch_size 64 \
     --n_statements 5 \
     --log_every 10 --seed 42 \
     2>&1

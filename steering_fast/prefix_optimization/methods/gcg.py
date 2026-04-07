@@ -435,10 +435,20 @@ def optimize_prefix_gcg(
     steps_without_improvement = 0
     start_time = time.time()
 
+    # Progressive warmup: start with 1 statement, add more over time
+    # This prevents gradient conflicts from blocking optimization early on
+    warmup_steps = min(50, config.n_steps // 3) if len(all_ids_list) > 1 else 0
+
     for step in range(config.n_steps):
-        # 1. Token gradients (averaged across all statements)
+        # Progressive statement selection: 1 statement during warmup, then all
+        if step < warmup_steps:
+            step_stmts = [all_ids_list[0]]  # single statement during warmup
+        else:
+            step_stmts = all_ids_list  # all statements after warmup
+
+        # 1. Token gradients (averaged across active statements)
         token_grads = compute_token_gradients(
-            model, all_ids_list, prefix_start, prefix_end, current_prefix_ids,
+            model, step_stmts, prefix_start, prefix_end, current_prefix_ids,
             active_layers, active_directions, layer_to_token, loss_fn, device,
         )
 
@@ -479,9 +489,9 @@ def optimize_prefix_gcg(
             topk = (-token_grads[pos]).topk(config.gcg_topk)
             candidate_ids = topk.indices
 
-            # 4. Batched evaluation (averaged across all statements)
+            # 4. Batched evaluation (averaged across active statements)
             best_token, best_loss, step_cos_sim = evaluate_candidates_batched(
-                model, all_ids_list, prefix_start, prefix_end, current_prefix_ids,
+                model, step_stmts, prefix_start, prefix_end, current_prefix_ids,
                 pos, candidate_ids, active_layers, active_directions,
                 layer_to_token, loss_fn, device, config.gcg_batch_size,
             )
