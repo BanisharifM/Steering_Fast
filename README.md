@@ -58,15 +58,6 @@ steering_fast/
 ├── prefix_optimization/     # research module (GCG, PEZ v2, etc.)
 └── conf/                    # Hydra config tree (model/data/steering/experiment)
 
-docs/
-├── ROADMAP.md
-├── algorithm_design.md
-├── related_work_survey.md
-├── pipeline_audit.md
-├── codebase_math_details.md
-├── paper_analysis.md
-└── adit_papers_deep_analysis.md
-
 scripts/                     # SLURM submission scripts
 tests/                       # smoke tests
 ```
