@@ -3,6 +3,12 @@
 Optimized pipeline for attention-guided LLM steering, plus a research module that
 discovers optimal token prefixes for activating pre-trained concept directions.
 
+> Based on the reference implementation at
+> [pdavar/attention_guided_steering](https://github.com/pdavar/attention_guided_steering)
+> by [Parmida Davarmanesh](https://github.com/pdavar) (MIT).
+> The original algorithms live verbatim in `steering_fast/core/`. See the paper
+> citation below and [LICENSE](LICENSE) for terms.
+
 This codebase has two layers:
 
 1. **Optimized steering pipeline** (`main` branch, `steering_fast/pipeline/`) — a refactored
