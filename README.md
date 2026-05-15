@@ -30,15 +30,14 @@ This codebase has two layers:
 source scripts/env.sh
 pip install -e .
 
-# Run the optimized pipeline (stages 0–4) as a SLURM array
+# Smoke test for prefix optimization (single GPU, ~2h)
+sbatch scripts/run_prefix_opt_smoke.sh
+
+# GCG prefix optimization on the fears concept class
+sbatch scripts/run_gcg.sh
+
+# Run the full optimized pipeline (stages 0–4) as a SLURM array
 sbatch scripts/slurm_array.sh
-
-# Or submit the full pipeline with dependencies
-bash scripts/submit_full_pipeline.sh
-
-# For prefix-optimization research (GCG, PEZ v2, etc.), switch to the
-# `prefix-optimization` branch — it contains the additional research module
-# and SLURM scripts (run_gcg.sh, run_prefix_opt_smoke.sh, ...).
 ```
 
 Requires Python ≥3.10, an NVIDIA GPU with CUDA, and pre-computed concept directions in
