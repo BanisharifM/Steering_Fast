@@ -25,9 +25,6 @@ logs/
 # Claude Code project instructions (local only)
 CLAUDE.md
 
-# Research notes (local only)
-docs/
-
 # Data symlink (points to ../attention_guided_steering/data)
 /data
 
