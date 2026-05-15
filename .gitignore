@@ -16,6 +16,14 @@ outputs/
 # Pipeline outputs (generated data)
 checkpoints/
 checkpoints_parallel/
+outputs_parallel/
+outputs_wandb/
+
+# SLURM logs
+logs/
+
+# Claude Code project instructions (local only)
+CLAUDE.md
 
 # Data symlink (points to ../attention_guided_steering/data)
 /data
