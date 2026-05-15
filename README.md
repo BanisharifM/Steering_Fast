@@ -8,6 +8,9 @@ discovers optimal token prefixes for activating pre-trained concept directions.
 > by [Parmida Davarmanesh](https://github.com/pdavar) (MIT).
 > The original algorithms live verbatim in `steering_fast/core/`. See the paper
 > citation below and [LICENSE](LICENSE) for terms.
+>
+> **What's different from the original pipeline?** See [CHANGES.md](CHANGES.md) for
+> a per-file walkthrough of every optimization.
 
 This codebase has two layers:
 
