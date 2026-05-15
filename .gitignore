@@ -22,8 +22,11 @@ outputs_wandb/
 # SLURM logs
 logs/
 
-# Claude Code project instructions (local only)
+# Claude Code project instructions
 CLAUDE.md
+
+# Research notes
+docs/
 
 # Data symlink (points to ../attention_guided_steering/data)
 /data
