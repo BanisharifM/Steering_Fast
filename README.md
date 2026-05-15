@@ -24,11 +24,14 @@ This codebase has two layers:
 source scripts/env.sh
 pip install -e .
 
-# Run the smoke pipeline (3 concepts, stages 0–2)
-bash scripts/run_smoke.sh   # see scripts/ for the exact submission script
+# Smoke test for prefix optimization (single GPU, ~2h)
+sbatch scripts/run_prefix_opt_smoke.sh
 
-# Run GCG prefix optimization on the fears concept class
+# GCG prefix optimization on the fears concept class
 sbatch scripts/run_gcg.sh
+
+# Run the full optimized pipeline (stages 0–4) as a SLURM array
+sbatch scripts/slurm_array.sh
 ```
 
 Requires Python ≥3.10, an NVIDIA GPU with CUDA, and pre-computed concept directions in
