@@ -3,6 +3,12 @@
 Optimized pipeline for attention-guided LLM steering, plus a research module that
 discovers optimal token prefixes for activating pre-trained concept directions.
 
+> Based on the reference implementation at
+> [pdavar/attention_guided_steering](https://github.com/pdavar/attention_guided_steering)
+> by [Parmida Davarmanesh](https://github.com/pdavar) (MIT).
+> The original algorithms live verbatim in `steering_fast/core/`. See the paper
+> citation below and [LICENSE](LICENSE) for terms.
+
 This codebase has two layers:
 
 1. **Optimized steering pipeline** (`main` branch, `steering_fast/pipeline/`) — a refactored
@@ -24,14 +30,15 @@ This codebase has two layers:
 source scripts/env.sh
 pip install -e .
 
-# Smoke test for prefix optimization (single GPU, ~2h)
-sbatch scripts/run_prefix_opt_smoke.sh
-
-# GCG prefix optimization on the fears concept class
-sbatch scripts/run_gcg.sh
-
-# Run the full optimized pipeline (stages 0–4) as a SLURM array
+# Run the optimized pipeline (stages 0–4) as a SLURM array
 sbatch scripts/slurm_array.sh
+
+# Or submit the full pipeline with dependencies
+bash scripts/submit_full_pipeline.sh
+
+# For prefix-optimization research (GCG, PEZ v2, etc.), switch to the
+# `prefix-optimization` branch — it contains the additional research module
+# and SLURM scripts (run_gcg.sh, run_prefix_opt_smoke.sh, ...).
 ```
 
 Requires Python ≥3.10, an NVIDIA GPU with CUDA, and pre-computed concept directions in
